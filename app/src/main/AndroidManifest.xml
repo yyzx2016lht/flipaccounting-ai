@@ -55,10 +55,6 @@
         </receiver>
 
         <activity android:name=".AppListActivity" android:label="触发应用白名单" />
-        <activity
-            android:name=".AIConfigActivity"
-            android:label="AI 智能配置"
-            android:screenOrientation="portrait" />
         <activity android:name=".AssetActivity" android:label="资产管理" />
         <activity android:name=".AddAssetActivity" android:label="新增资产" />
 
