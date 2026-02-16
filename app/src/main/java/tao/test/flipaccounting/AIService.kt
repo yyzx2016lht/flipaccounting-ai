@@ -47,11 +47,42 @@ interface SiliconFlowApi {
 
 // --- 服务实现 ---
 object AIService {
-    private const val BASE_URL = "https://api.siliconflow.cn/"
+    const val DEFAULT_PROMPT = """你是一个【严格的数据匹配助手】。你的任务是将用户的自然语言映射到提供的【固定选项列表】中。
 
-    private fun getApi(): SiliconFlowApi {
+【当前基准时间】: {{TIME}}
+
+【选项列表 (必须严格遵守)】
+1. 可用资产库: {{ASSETS}}
+2. 支出分类库: {{EXPENSE_CATS}}
+3. 收入分类库: {{INCOME_CATS}}
+
+【匹配逻辑】
+1. **Category (分类)**: 理解物品语义，在分类库中找到最匹配的那一项。**必须原样返回字符串**。
+2. **Asset (资产)**: 将口语别名（如"蓝色的软件"）映射为库中的标准名称（如"支付宝"）。
+3. **Time (时间)**: 基于基准时间推算，格式 yyyy-MM-dd HH:mm:ss。
+
+【JSON 输出格式】
+{"amount":0.0, "type":0, "asset_name":"", "to_asset_name":"", "category_name":"", "time":"", "remarks":""}
+
+【格式演示 (Format Demo)】
+警告：以下示例中的分类和资产仅供参考格式，实际请根据用户输入从上方列表中选择。
+
+输入: "刚才用{{DEMO_ASSET}} 买东西花了100"
+输出: {"amount":100.0, "type":0, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"买东西"}
+
+输入: "发工资了入账{{DEMO_ASSET}} 5000"
+输出: {"amount":5000.0, "type":1, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_INCOME_CAT}}", "time":"...", "remarks":"工资"}"""
+
+    private fun getApi(ctx: Context): SiliconFlowApi {
+        var baseUrl = Prefs.getAiUrl(ctx)
+        if (baseUrl.isEmpty()) {
+            baseUrl = "https://api.siliconflow.cn/"
+        }
+        if (!baseUrl.endsWith("/")) {
+            baseUrl += "/"
+        }
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(SiliconFlowApi::class.java)
@@ -60,8 +91,6 @@ object AIService {
     /**
      * 语音转文字：使用 TeleAI/TeleSpeechASR 模型
      */
-    // 在 AIService object 中更新此方法
-
     suspend fun speechToText(ctx: Context, audioFile: File): String? {
         val apiKey = Prefs.getAiKey(ctx)
         if (apiKey.isEmpty()) return null
@@ -76,7 +105,7 @@ object AIService {
             val modelPart = okhttp3.MultipartBody.Part.createFormData("model", "FunAudioLLM/SenseVoiceSmall")
 
             // 3. 发送请求
-            val response = getApi().transcribe("Bearer $apiKey", modelPart, filePart)
+            val response = getApi(ctx).transcribe("Bearer $apiKey", modelPart, filePart)
             response.text
         } catch (e: Exception) {
             e.printStackTrace()
@@ -85,55 +114,58 @@ object AIService {
         }
     }
     // 核心：分析记账文本
+    // 核心：分析记账文本
     suspend fun analyzeAccounting(ctx: Context, userInput: String): JSONObject? {
         val apiKey = Prefs.getAiKey(ctx)
         val model = Prefs.getAiModel(ctx)
         if (apiKey.isEmpty()) return null
 
-        // 1. 准备上下文数据 (为了省钱和速度，只提取名称)
+        // 1. 准备数据
         val assets = Prefs.getAssets(ctx).map { it.name }
-        val expenseCats = Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).map { flattenCategory(it) }
-        val incomeCats = Prefs.getCategories(ctx, Prefs.TYPE_INCOME).map { flattenCategory(it) }
-// 1. 【新增】获取当前精确时间，格式：2026-02-15 14:30:00 (星期日)
+        // 为了提高 token 利用率，我们将分类拍扁，但保留层级结构字符串
+        val expenseCats = Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).flatMap { parent ->
+            if (parent.subs.isEmpty()) listOf(parent.name)
+            else parent.subs.map { "${parent.name}>${it.name}" }
+        }
+        val incomeCats = Prefs.getCategories(ctx, Prefs.TYPE_INCOME).flatMap { parent ->
+            if (parent.subs.isEmpty()) listOf(parent.name)
+            else parent.subs.map { "${parent.name}>${it.name}" }
+        }
+        val demoAsset = assets.firstOrNull() ?: "微信"
+        val demoExpenseCat = expenseCats.firstOrNull() ?: "吃的"
+        val demoIncomeCat = incomeCats.firstOrNull() ?: "工资"
+        // 2. 时间锚点：格式化为 "2026-02-15 14:30:00 (星期日)"
         val now = Date()
         val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val weekFormat = SimpleDateFormat("EEEE", Locale.getDefault()) // 获取星期几
+        val weekFormat = SimpleDateFormat("EEEE", Locale.getDefault())
         val currentTimeStr = "${timeFormat.format(now)} (${weekFormat.format(now)})"
-        // 2. 构建 Prompt
-// ... 在 analyzeAccounting 方法中修改 systemPrompt ...
-        val systemPrompt = """
-    你是一个记账助手。请根据输入提取信息，返回严格 JSON。
-    
-    【资产库】: ${Gson().toJson(assets)}
-    【分类库】: 支出:${Gson().toJson(expenseCats)}, 收入:${Gson().toJson(incomeCats)}
-    【当前时间】: $currentTimeStr
-    【核心规范】:
-    1. type: 0:支出, 1:收入, 2:转账, 3:信用卡还款, 5:报销
-    2. asset_name/to_asset_name: 必须从【资产库】精确匹配。若用户未提及具体支付工具（如没说微信、支付宝等），必须返回 ""。
-    3. category_name: 必须是【分类库】中**完整存在的路径字符串**。禁止跨父类拼接！匹配不到则返回 "其他"。
-    4. time: 格式 "yyyy-MM-dd HH:mm:ss"。未提及返回 ""。支持"昨天/前天"等计算，支持"早/午/晚饭"推断(08:00/12:00/19:00)。
-    
-    【JSON字段】:
-    - amount(数字), type(整数), asset_name(字符串), to_asset_name(转入账户), fee(手续费), category_name(分类全路径), time(时间字符串), remarks(备注)
 
-    示例输入1: "昨天中午吃拉面花了20" (假设今日2026-02-15)
-    返回: {"amount": 20, "type": 0, "time": "2026-02-14 12:00:00", "asset_name": "", "category_name": "餐饮 > 午餐", "remarks": "吃拉面"}
-    
-    示例输入2: "支付宝转账500到招行"
-    返回: {"amount": 500, "type": 2, "asset_name": "支付宝", "to_asset_name": "招商银行", "category_name": ""}
-""".trimIndent()
-        // 3. 发送请求
+        // 3. 构建 System Prompt
+        var p = Prefs.getAiPrompt(ctx)
+        if (p.isEmpty()) {
+            p = DEFAULT_PROMPT
+        }
+        
+        val systemPrompt = p.replace("{{TIME}}", currentTimeStr)
+            .replace("{{ASSETS}}", Gson().toJson(assets))
+            .replace("{{EXPENSE_CATS}}", Gson().toJson(expenseCats))
+            .replace("{{INCOME_CATS}}", Gson().toJson(incomeCats))
+            .replace("{{DEMO_ASSET}}", demoAsset)
+            .replace("{{DEMO_EXPENSE_CAT}}", demoExpenseCat)
+            .replace("{{DEMO_INCOME_CAT}}", demoIncomeCat)
+
+        // 4. 发送请求
         return try {
             val messages = listOf(
                 Message("system", systemPrompt),
                 Message("user", userInput)
             )
-            val response = getApi().chat(
-                "Bearer $apiKey",
-                ChatRequest(model.ifEmpty { "Qwen/Qwen2.5-7B-Instruct" }, messages)
-            )
+            val request = ChatRequest(model, messages)
+            val response = getApi(ctx).chat("Bearer $apiKey", request)
+            // 注意：API 返回的 content 可能是字符串形式的 JSON，或者是直接对象
+            // 硅基流动通常返回字符串格式，需要解析
             val content = response.choices.first().message.content
-            JSONObject(response.choices.first().message.content)
+            JSONObject(content)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -151,17 +183,11 @@ object AIService {
     /**
      * 获取模型列表：用于 AI 配置页面的连接测试
      */
-    suspend fun fetchModels(apiKey: String): List<String> {
+    suspend fun fetchModels(ctx: Context, apiKey: String): List<String> {
         return try {
-            val response = getApi().getModels("Bearer $apiKey")
-            // 从 JsonObject 中解析 data 数组
+            val response = getApi(ctx).getModels("Bearer $apiKey")
             val data = response.getAsJsonArray("data")
-            data.map { it.asJsonObject.get("id").asString }
-                .filter {
-                    // 过滤出常用的对话模型
-                    it.contains("Qwen") || it.contains("deepseek") || it.contains("glm")
-                }
-                .sorted()
+            data.map { it.asJsonObject.get("id").asString }.sorted()
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()

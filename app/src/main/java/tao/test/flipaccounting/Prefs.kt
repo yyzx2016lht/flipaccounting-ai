@@ -36,6 +36,9 @@ object Prefs {
     private const val KEY_CAT_INCOME = "cat_income_v1"
     private const val KEY_AI_KEY = "ai_api_key"
     private const val KEY_AI_MODEL = "ai_model_id"
+    private const val KEY_AI_PROVIDER = "ai_provider"
+    private const val KEY_AI_URL = "ai_api_url"
+    private const val KEY_AI_PROMPT = "ai_system_prompt"
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -56,6 +59,15 @@ object Prefs {
 
     fun getAiModel(ctx: Context): String = prefs(ctx).getString(KEY_AI_MODEL, "Qwen/Qwen2.5-7B-Instruct") ?: "Qwen/Qwen2.5-7B-Instruct"
     fun setAiModel(ctx: Context, model: String) = prefs(ctx).edit().putString(KEY_AI_MODEL, model).apply()
+
+    fun getAiProvider(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROVIDER, "硅基流动") ?: "硅基流动"
+    fun setAiProvider(ctx: Context, provider: String) = prefs(ctx).edit().putString(KEY_AI_PROVIDER, provider).apply()
+
+    fun getAiUrl(ctx: Context): String = prefs(ctx).getString(KEY_AI_URL, "https://api.siliconflow.cn") ?: "https://api.siliconflow.cn"
+    fun setAiUrl(ctx: Context, url: String) = prefs(ctx).edit().putString(KEY_AI_URL, url).apply()
+
+    fun getAiPrompt(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROMPT, "") ?: ""
+    fun setAiPrompt(ctx: Context, prompt: String) = prefs(ctx).edit().putString(KEY_AI_PROMPT, prompt).apply()
 
     // --- 应用白名单管理 ---
     fun getAppWhiteList(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_WHITE_LIST, emptySet()) ?: emptySet()
