@@ -55,9 +55,24 @@ object OverlayDialogs {
                     itemView.findViewById<TextView>(R.id.tv_category_name).apply {
                         text = cat.name
                         if (cat.name == parent?.name) setTextColor(Color.parseColor("#2196F3"))
+                        else setTextColor(Color.parseColor("#333333"))
                     }
-                    Glide.with(ctx).load(cat.icon).transform(CircleCrop()).into(itemView.findViewById(R.id.iv_category_icon))
-                    itemView.setOnClickListener { currentSelection = cat.name; render() }
+                    val ivIcon = itemView.findViewById<ImageView>(R.id.iv_category_icon)
+                    if (cat.name == parent?.name) {
+                        ivIcon.setColorFilter(Color.parseColor("#2196F3"))
+                    } else {
+                        ivIcon.setColorFilter(Color.parseColor("#757575"))
+                    }
+                    Glide.with(ctx).load(cat.icon).transform(CircleCrop()).into(ivIcon)
+                    itemView.setOnClickListener {
+                        // 如果点击的是当前已展开的父分类，则清空选择以实现“缩回去”的效果
+                        if (currentSelection.split("/::/").getOrNull(0) == cat.name) {
+                            currentSelection = ""
+                        } else {
+                            currentSelection = cat.name
+                        }
+                        render()
+                    }
                     rowLayout.addView(itemView, LinearLayout.LayoutParams(0, -2, 1f))
                 }
                 container.addView(rowLayout)
@@ -92,10 +107,15 @@ object OverlayDialogs {
             parent.subs.forEach { sub ->
                 val item = LayoutInflater.from(ctx).inflate(R.layout.item_category_grid, this, false)
                 item.findViewById<TextView>(R.id.tv_category_name).text = sub.name
+                val ivIcon = item.findViewById<ImageView>(R.id.iv_category_icon)
                 if (sub.name == selected) {
-                    item.findViewById<ImageView>(R.id.iv_category_icon).setColorFilter(Color.parseColor("#2196F3"))
+                    item.findViewById<TextView>(R.id.tv_category_name).setTextColor(Color.parseColor("#2196F3"))
+                    ivIcon.setColorFilter(Color.parseColor("#2196F3"))
+                } else {
+                    item.findViewById<TextView>(R.id.tv_category_name).setTextColor(Color.parseColor("#333333"))
+                    ivIcon.setColorFilter(Color.parseColor("#757575"))
                 }
-                Glide.with(ctx).load(sub.icon).transform(CircleCrop()).into(item.findViewById(R.id.iv_category_icon))
+                Glide.with(ctx).load(sub.icon).transform(CircleCrop()).into(ivIcon)
                 item.setOnClickListener { onClick(sub) }
                 addView(item, GridLayout.LayoutParams(
                     GridLayout.spec(GridLayout.UNDEFINED, 1f),

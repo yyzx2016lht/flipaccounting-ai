@@ -44,13 +44,16 @@ class BuiltInCategoryAdapter(
 
         // 加载图标并着色
         Glide.with(holder.itemView).load(item.icon).into(holder.iv)
-        holder.iv.setColorFilter(Color.parseColor("#424242"), PorterDuff.Mode.SRC_IN)
-
+        
         // --- 核心：选中状态高亮 ---
         if (item.icon == selectedIconUrl) {
-            holder.itemView.setBackgroundColor(Color.parseColor("#E0E0E0")) // 选中变灰
+            holder.itemView.setBackgroundColor(Color.parseColor("#E3F2FD")) // 淡蓝色背景
+            holder.iv.setColorFilter(Color.parseColor("#2196F3"), PorterDuff.Mode.SRC_IN)
+            holder.tv.setTextColor(Color.parseColor("#2196F3"))
         } else {
-            holder.itemView.setBackgroundColor(Color.TRANSPARENT) // 未选中透明
+            holder.itemView.setBackgroundColor(Color.TRANSPARENT)
+            holder.iv.setColorFilter(Color.parseColor("#757575"), PorterDuff.Mode.SRC_IN)
+            holder.tv.setTextColor(Color.parseColor("#666666"))
         }
 
         holder.itemView.setOnClickListener {

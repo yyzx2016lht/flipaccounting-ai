@@ -47,7 +47,7 @@ interface SiliconFlowApi {
 
 // --- 服务实现 ---
 object AIService {
-    const val DEFAULT_PROMPT = """你是一个【严格的数据匹配助手】。你的任务是将用户的自然语言映射到提供的【固定选项列表】中。
+  const val DEFAULT_PROMPT = """你是一个【严格的数据匹配助手】。你的任务是将用户的自然语言映射到提供的【固定选项列表】中。
 
 【当前基准时间】: {{TIME}}
 
@@ -58,7 +58,9 @@ object AIService {
 
 【匹配逻辑】
 1. **Category (分类)**: 理解物品语义，在分类库中找到最匹配的那一项。**必须原样返回字符串**。
-2. **Asset (资产)**: 将口语别名（如"蓝色的软件"）映射为库中的标准名称（如"支付宝"）。
+2. **Asset (资产)**: 
+   - 提取用户明确提到的账户（如“招行”、“微信”）。
+   - **重要约束：如果用户未提及任何资产关键词，必须返回空字符串 ""。绝对禁止默认为“现金”或列表中的第一项。**
 3. **Time (时间)**: 基于基准时间推算，格式 yyyy-MM-dd HH:mm:ss。
 
 【JSON 输出格式】
@@ -70,9 +72,11 @@ object AIService {
 输入: "刚才用{{DEMO_ASSET}} 买东西花了100"
 输出: {"amount":100.0, "type":0, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"买东西"}
 
+输入: "昨天吃了一碗面20"
+输出: {"amount":20.0, "type":0, "asset_name":"", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"吃面"}
+
 输入: "发工资了入账{{DEMO_ASSET}} 5000"
 输出: {"amount":5000.0, "type":1, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_INCOME_CAT}}", "time":"...", "remarks":"工资"}"""
-
     private fun getApi(ctx: Context): SiliconFlowApi {
         var baseUrl = Prefs.getAiUrl(ctx)
         if (baseUrl.isEmpty()) {
@@ -125,11 +129,11 @@ object AIService {
         // 为了提高 token 利用率，我们将分类拍扁，但保留层级结构字符串
         val expenseCats = Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).flatMap { parent ->
             if (parent.subs.isEmpty()) listOf(parent.name)
-            else parent.subs.map { "${parent.name}>${it.name}" }
+            else parent.subs.map { "${parent.name} > ${it.name}" }
         }
         val incomeCats = Prefs.getCategories(ctx, Prefs.TYPE_INCOME).flatMap { parent ->
             if (parent.subs.isEmpty()) listOf(parent.name)
-            else parent.subs.map { "${parent.name}>${it.name}" }
+            else parent.subs.map { "${parent.name} > ${it.name}" }
         }
         val demoAsset = assets.firstOrNull() ?: "微信"
         val demoExpenseCat = expenseCats.firstOrNull() ?: "吃的"

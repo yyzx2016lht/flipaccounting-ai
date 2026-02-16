@@ -146,7 +146,13 @@ class SettingsActivity : AppCompatActivity() {
 
         view.findViewById<TextView>(R.id.tv_category_name).text = cat.name
         val iv = view.findViewById<ImageView>(R.id.iv_category_icon)
-        iv.setColorFilter(Color.parseColor("#424242"), PorterDuff.Mode.SRC_IN)
+        if (isSelected) {
+            iv.setColorFilter(Color.parseColor("#2196F3"))
+            view.findViewById<TextView>(R.id.tv_category_name).setTextColor(Color.parseColor("#2196F3"))
+        } else {
+            iv.setColorFilter(Color.parseColor("#757575"))
+            view.findViewById<TextView>(R.id.tv_category_name).setTextColor(Color.parseColor("#333333"))
+        }
         if (cat.icon.isNotEmpty()) Glide.with(this).load(cat.icon).into(iv)
         return view
     }

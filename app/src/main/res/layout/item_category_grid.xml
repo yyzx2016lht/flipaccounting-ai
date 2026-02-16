@@ -12,7 +12,7 @@
         android:layout_height="40dp"
         android:scaleType="fitCenter"
         android:padding="4dp"
-        android:tint="#424242" /> <!-- 这里设置深灰色着色，白色图标会瞬间变深灰 -->
+        android:tint="#757575" />
 
     <TextView
         android:id="@+id/tv_category_name"

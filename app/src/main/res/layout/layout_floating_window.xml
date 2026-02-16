@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root_floating_view"
     android:layout_width="320dp"
     android:layout_height="wrap_content"
@@ -179,23 +180,31 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="12dp"
         android:orientation="horizontal">
-        <Button
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_cancel"
-            style="?android:attr/borderlessButtonStyle"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="取消" />
-        <Button
+            android:text="取消"
+            android:textColor="#666666"
+            app:strokeColor="#DDDDDD"
+            app:cornerRadius="8dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_save"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:backgroundTint="#5C6BC0"
-            android:text="保存到钱迹"
-            android:textColor="#FFFFFF" />
+            android:layout_height="48dp"
+            android:layout_weight="1.5"
+            android:layout_marginStart="8dp"
+            android:text="记录并发送"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            app:backgroundTint="#5C6BC0"
+            app:cornerRadius="8dp" />
     </LinearLayout>
 
 </LinearLayout>

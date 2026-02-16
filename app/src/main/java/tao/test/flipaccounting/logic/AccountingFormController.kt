@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.*
 import org.json.JSONObject
 import tao.test.flipaccounting.Prefs
+import tao.test.flipaccounting.Bill
 import tao.test.flipaccounting.R
 import tao.test.flipaccounting.Utils
 import tao.test.flipaccounting.ui.dialog.OverlayDialogs
@@ -89,14 +90,21 @@ class AccountingFormController(
                         layoutCategory.visibility = View.GONE
                         layoutAccount2.visibility = View.VISIBLE
                         layoutFee.visibility = View.VISIBLE
-                        tvAccount.text = "选择转出账户"
+                        if (tvAccount.text.toString().contains("选择")) {
+                            tvAccount.text = "选择转出账户"
+                        }
+                        if (tvAccount2.text.toString().contains("选择")) {
+                            tvAccount2.text = "转入账户"
+                        }
                         etMoney.hint = "转账金额"
                     }
                     else -> { // 支出(0)或收入(1)
                         layoutCategory.visibility = View.VISIBLE
                         layoutAccount2.visibility = View.GONE
                         layoutFee.visibility = View.GONE
-                        tvAccount.text = "选择资产"
+                        if (tvAccount.text.toString().contains("选择") || tvAccount.text.toString().contains("转出")) {
+                            tvAccount.text = "选择资产"
+                        }
                         etMoney.hint = "0.00"
                     }
                 }
@@ -120,7 +128,7 @@ class AccountingFormController(
         var account2 = ""
         var feeStr = "0"
         var finalMoney = rawMoneyStr.toDouble()
-        var finalCategory = if (tvCategory.text.contains("选择")) "" else tvCategory.text.toString().replace(" > ", "/::/")
+        var finalCategory = if (tvCategory.text.contains("选择")) "" else tvCategory.text.toString().replace(" > ", "/::/").replace(">", "/::/")
 
         if (typeIndex == 2) { // 转账模式
             account2 = if (tvAccount2.text.contains("选择")) "" else tvAccount2.text.toString()
@@ -146,6 +154,24 @@ class AccountingFormController(
             showresult = "0"
         )
 
+        // 如果分类中包含 /::/，说明是 AI 识别的层级结构，需要保留 /::/ 用于传给钱迹，但在显示时替换为 >
+        val finalCategoryString = if (typeIndex == 2) "转账到 $account2" else finalCategory.replace("/::/", " > ")
+
+        // 核心修改：在此处计算并保存图标，确保 AI 记账也能有图标
+        val resolvedIcon = tao.test.flipaccounting.CategoryIconHelper.findCategoryIcon(ctx, if (typeIndex == 2) "转账" else finalCategoryString, typeIndex)
+
+        // 保存到本地数据库 (SharedPreferences)
+        val bill = Bill(
+            finalMoney,
+            typeIndex, // 0-支出, 1-收入, 2-转账
+            account1,
+            finalCategoryString,
+            tvTime.text.toString(),
+            etRemark.text.toString(),
+            resolvedIcon // 保存图标链接
+        )
+        Prefs.addBill(ctx, bill)
+
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -156,7 +182,7 @@ class AccountingFormController(
         }
     }
 
-    fun fillDataToUi(result: JSONObject) {
+    fun fillDataToUi(result: JSONObject, showToast: Boolean = true) {
         val targetType = result.optInt("type", 0)
         val currentType = spType.selectedItemPosition
 
@@ -165,14 +191,14 @@ class AccountingFormController(
             val amount = result.optDouble("amount", 0.0)
             if (amount > 0) {
                 etMoney.setText(amount.toString())
-                playHighlightAnimation(etMoney)
+                if (showToast) playHighlightAnimation(etMoney)
             }
 
             // B. 填充主账户
             val asset = result.optString("asset_name", "")
             if (asset.isNotEmpty()) {
                 tvAccount.text = asset
-                playHighlightAnimation(tvAccount.parent as View)
+                if (showToast) playHighlightAnimation(tvAccount.parent as View)
             }
 
             // C. 根据类型填充其他数据
@@ -180,18 +206,18 @@ class AccountingFormController(
                 val toAsset = result.optString("to_asset_name", "")
                 if (toAsset.isNotEmpty()) {
                     tvAccount2.text = toAsset
-                    playHighlightAnimation(tvAccount2.parent as View)
+                    if (showToast) playHighlightAnimation(tvAccount2.parent as View)
                 }
                 val fee = result.optDouble("fee", 0.0)
                 if (fee > 0) {
                     etFee.setText(fee.toString())
-                    playHighlightAnimation(etFee)
+                    if (showToast) playHighlightAnimation(etFee)
                 }
             } else { // 支出/收入
                 val category = result.optString("category_name", "")
                 if (category.isNotEmpty()) {
                     tvCategory.text = category.replace("/::/", " > ")
-                    playHighlightAnimation(tvCategory.parent as View)
+                    if (showToast) playHighlightAnimation(tvCategory.parent as View)
                 }
             }
 
@@ -199,20 +225,22 @@ class AccountingFormController(
             val remark = result.optString("remarks", "")
             if (remark.isNotEmpty()) {
                 etRemark.setText(remark)
-                playHighlightAnimation(etRemark)
+                if (showToast) playHighlightAnimation(etRemark)
             }
             val timeStr = result.optString("time", "")
             if (timeStr.isNotEmpty() && timeStr.contains("-")) {
                 tvTime.text = timeStr
-                playHighlightAnimation(tvTime)
+                if (showToast) playHighlightAnimation(tvTime)
             }
-            Utils.toast(ctx, "✨ 智能填写完成")
+            if (showToast) Utils.toast(ctx, "✨ 智能填写完成")
         }
 
         if (currentType != targetType) {
             spType.setSelection(targetType)
-            spType.postDelayed({ executeFillData() }, 200)
+            // 增加延迟确保 Spinner 的监听器触发完毕后，我们的数据填充才开始
+            spType.postDelayed({ executeFillData() }, 350)
         } else {
+            // 如果类型没变，直接填充
             executeFillData()
         }
     }

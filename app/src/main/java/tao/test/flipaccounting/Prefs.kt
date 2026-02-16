@@ -20,6 +20,16 @@ data class Asset(
     val icon: String = ""
 )
 
+data class Bill(
+    val amount: Double,
+    val type: Int, // 0-支出, 1-收入
+    val assetName: String,
+    val categoryName: String,
+    val time: String,
+    val remarks: String = "",
+    val iconUrl: String = ""
+)
+
 /**
  * 数据持久化管理类
  */
@@ -39,6 +49,7 @@ object Prefs {
     private const val KEY_AI_PROVIDER = "ai_provider"
     private const val KEY_AI_URL = "ai_api_url"
     private const val KEY_AI_PROMPT = "ai_system_prompt"
+    private const val KEY_BILLS = "bills_list"
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -68,6 +79,75 @@ object Prefs {
 
     fun getAiPrompt(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROMPT, "") ?: ""
     fun setAiPrompt(ctx: Context, prompt: String) = prefs(ctx).edit().putString(KEY_AI_PROMPT, prompt).apply()
+
+    // --- 账单管理 ---
+    fun addBill(ctx: Context, bill: Bill) {
+        val list = getBills(ctx).toMutableList()
+        list.add(0, bill) // 新账单放在最前面
+        val json = JSONArray()
+        list.forEach {
+            val obj = JSONObject()
+            obj.put("amount", it.amount)
+            obj.put("type", it.type)
+            obj.put("assetName", it.assetName)
+            obj.put("categoryName", it.categoryName)
+            obj.put("time", it.time)
+            obj.put("remarks", it.remarks)
+            obj.put("iconUrl", it.iconUrl)
+            json.put(obj)
+        }
+        prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
+    }
+
+    fun deleteBill(ctx: Context, bill: Bill) {
+        val list = getBills(ctx).toMutableList()
+        // 精确匹配删除：通过时间、金额、分类和资产名称来识别
+        val iterator = list.iterator()
+        while(iterator.hasNext()) {
+            val item = iterator.next()
+            if (item.time == bill.time && item.amount == bill.amount && 
+                item.categoryName == bill.categoryName && item.assetName == bill.assetName) {
+                iterator.remove()
+                break
+            }
+        }
+        val json = JSONArray()
+        list.forEach {
+            val obj = JSONObject()
+            obj.put("amount", it.amount)
+            obj.put("type", it.type)
+            obj.put("assetName", it.assetName)
+            obj.put("categoryName", it.categoryName)
+            obj.put("time", it.time)
+            obj.put("remarks", it.remarks)
+            obj.put("iconUrl", it.iconUrl)
+            json.put(obj)
+        }
+        prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
+    }
+
+    fun getBills(ctx: Context): List<Bill> {
+        val str = prefs(ctx).getString(KEY_BILLS, null) ?: return emptyList()
+        val list = mutableListOf<Bill>()
+        try {
+            val json = JSONArray(str)
+            for (i in 0 until json.length()) {
+                val obj = json.getJSONObject(i)
+                list.add(Bill(
+                    obj.getDouble("amount"),
+                    obj.getInt("type"),
+                    obj.getString("assetName"),
+                    obj.getString("categoryName"),
+                    obj.getString("time"),
+                    obj.optString("remarks", ""),
+                    obj.optString("iconUrl", "")
+                ))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
 
     // --- 应用白名单管理 ---
     fun getAppWhiteList(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_WHITE_LIST, emptySet()) ?: emptySet()
@@ -104,7 +184,7 @@ object Prefs {
         val key = if (type == TYPE_INCOME) KEY_CAT_INCOME else KEY_CAT_EXPENSE
         val json = prefs(ctx).getString(key, "")
         if (json.isNullOrEmpty()) {
-            return if (type == TYPE_INCOME) getDefaultIncome() else getDefaultExpense()
+            return loadDefaultFromRaw(ctx, type)
         }
         val list = mutableListOf<CategoryNode>()
         try {
@@ -113,8 +193,51 @@ object Prefs {
                 list.add(parseNode(array.getJSONObject(i)))
             }
         } catch (e: Exception) {
-            return if (type == TYPE_INCOME) getDefaultIncome() else getDefaultExpense()
+            return loadDefaultFromRaw(ctx, type)
         }
+        return list
+    }
+
+    fun loadDefaultFromRaw(ctx: Context, type: Int): MutableList<CategoryNode> {
+        return try {
+            val stream = ctx.resources.openRawResource(R.raw.default_category)
+            val content = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val root = JSONObject(content)
+            val list = mutableListOf<CategoryNode>()
+            
+            // 尝试多个可能的 Key，防止 JSON 编码或结构变化导致找不到
+            // 钱迹自带格式一般为 "支出" 和 "收入"
+            val key = if (type == TYPE_INCOME) "收入" else "支出"
+            var array = root.optJSONArray(key)
+            
+            // 兜底方案：如果找不到对应的 Key，尝试另一个 Key (有些导出可能不带类型)
+            if (array == null) {
+                array = root.optJSONArray(if (type == TYPE_INCOME) "支出" else "收入")
+            }
+            
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    list.add(parseNode(array.getJSONObject(i)))
+                }
+            }
+            list
+        } catch (e: Exception) {
+            e.printStackTrace()
+            mutableListOf()
+        }
+    }
+
+    fun loadAssetsFromRaw(ctx: Context): List<BuiltInCategory> {
+        val list = mutableListOf<BuiltInCategory>()
+        try {
+            val stream = ctx.resources.openRawResource(R.raw.assets)
+            val content = stream.bufferedReader().use { it.readText() }
+            val array = JSONArray(content)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(BuiltInCategory(obj.getString("name"), obj.getString("icon")))
+            }
+        } catch (e: Exception) { e.printStackTrace() }
         return list
     }
 
@@ -133,7 +256,8 @@ object Prefs {
     // --- 内部解析与序列化逻辑 ---
     private fun parseNode(obj: JSONObject): CategoryNode {
         val node = CategoryNode(obj.getString("name"), obj.getString("icon"))
-        val subArray = obj.optJSONArray("subs")
+        // 同时支持 "subs" 和 "sub" (json 文件中是 sub)
+        val subArray = obj.optJSONArray("subs") ?: obj.optJSONArray("sub")
         if (subArray != null) {
             for (i in 0 until subArray.length()) {
                 node.subs.add(parseNode(subArray.getJSONObject(i)))
@@ -200,20 +324,20 @@ object Prefs {
 
     // --- 默认数据 ---
     private fun getDefaultExpense() = mutableListOf(
-        CategoryNode("餐饮", "http://res3.qianjiapp.com/catev2/cate_icon_canyin.png", mutableListOf(
-            CategoryNode("早餐", "http://res3.qianjiapp.com/catev2/cate_icon_zaocan.png"),
-            CategoryNode("午餐", "http://res3.qianjiapp.com/catev2/cate_icon_wucan.png"),
-            CategoryNode("晚餐", "http://res3.qianjiapp.com/catev2/cate_icon_wancan.png")
+        CategoryNode("餐饮", "https://res3.qianjiapp.com/catev2/cate_icon_canyin.png", mutableListOf(
+            CategoryNode("早餐", "https://res3.qianjiapp.com/catev2/cate_icon_zaocan.png"),
+            CategoryNode("午餐", "https://res3.qianjiapp.com/catev2/cate_icon_wucan.png"),
+            CategoryNode("晚餐", "https://res3.qianjiapp.com/catev2/cate_icon_wancan.png")
         )),
-        CategoryNode("交通", "http://res3.qianjiapp.com/catev2/cate_icon_jiaotong.png"),
-        CategoryNode("购物", "http://res3.qianjiapp.com/catev2/cate_icon_gouwu.png"),
-        CategoryNode("娱乐", "http://res3.qianjiapp.com/catev2/cate_icon_yule.png")
+        CategoryNode("交通", "https://res3.qianjiapp.com/catev2/cate_icon_jiaotong.png"),
+        CategoryNode("购物", "https://res3.qianjiapp.com/catev2/cate_icon_gouwu.png"),
+        CategoryNode("娱乐", "https://res3.qianjiapp.com/catev2/cate_icon_yule.png")
     )
 
     private fun getDefaultIncome() = mutableListOf(
-        CategoryNode("工资", "http://res3.qianjiapp.com/cateic_gongzi.png"),
-        CategoryNode("兼职", "http://res3.qianjiapp.com/cateic_jianzhi.png"),
-        CategoryNode("理财", "http://res3.qianjiapp.com/cateic_licai.png"),
-        CategoryNode("礼金", "http://res3.qianjiapp.com/cateic_lijin.png")
+        CategoryNode("工资", "https://res3.qianjiapp.com/cateic_gongzi.png"),
+        CategoryNode("兼职", "https://res3.qianjiapp.com/cateic_jianzhi.png"),
+        CategoryNode("理财", "https://res3.qianjiapp.com/cateic_licai.png"),
+        CategoryNode("礼金", "https://res3.qianjiapp.com/cateic_lijin.png")
     )
 }

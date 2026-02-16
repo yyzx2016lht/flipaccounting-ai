@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
+import org.json.JSONObject
 import tao.test.flipaccounting.logic.AccountingFormController
 import tao.test.flipaccounting.logic.VoiceInputHandler
 
@@ -19,11 +20,14 @@ class OverlayManager(private val ctx: Context) {
     private val aiAssistant = AiAssistant(ctx)
     private var formController: AccountingFormController? = null
 
-    fun showOverlay() {
+    fun showOverlay(prefill: JSONObject? = null) {
         if (overlayView != null) return
 
         windowManager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        overlayView = LayoutInflater.from(ctx).inflate(R.layout.layout_floating_window, null)
+        
+        // 使用 ContextThemeWrapper 确保 Material 库组件在 Service/WindowManager 中能正确渲染
+        val themeContext = android.view.ContextThemeWrapper(ctx, R.style.Theme_FlipAccounting)
+        overlayView = LayoutInflater.from(themeContext).inflate(R.layout.layout_floating_window, null)
 
         val params = WindowManager.LayoutParams().apply {
             width = (ctx.resources.displayMetrics.widthPixels * 0.9).toInt()
@@ -38,11 +42,11 @@ class OverlayManager(private val ctx: Context) {
             y = 150
         }
 
-        setupLogic(overlayView!!)
+        setupLogic(overlayView!!, prefill)
         windowManager?.addView(overlayView, params)
     }
 
-    private fun setupLogic(view: View) {
+    private fun setupLogic(view: View, prefill: JSONObject?) {
         view.isFocusable = true
         view.isFocusableInTouchMode = true
         view.setOnKeyListener { _, keyCode, event ->
@@ -60,16 +64,20 @@ class OverlayManager(private val ctx: Context) {
             removeOverlay()
         }
 
+        if (prefill != null) {
+            formController?.fillDataToUi(prefill, showToast = false)
+        }
+
         // Initialize Voice Handler
         val voiceHandler = VoiceInputHandler(ctx, aiAssistant) { resultJson ->
-             formController?.fillDataToUi(resultJson)
+             formController?.fillDataToUi(resultJson, showToast = true)
         }
         voiceHandler.setupVoiceButton(formController!!.btnVoice)
 
         // Initialize AI Entry Click (Text input)
         formController!!.layoutAiEntry.setOnClickListener {
              aiAssistant.showInputPanel { resultJson ->
-                 formController?.fillDataToUi(resultJson)
+                 formController?.fillDataToUi(resultJson, showToast = true)
              }
         }
     }

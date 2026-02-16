@@ -1,5 +1,6 @@
 package tao.test.flipaccounting
 
+import tao.test.flipaccounting.R
 import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
@@ -24,6 +25,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.widget.ImageView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.bitmap.CircleCrop
+import org.json.JSONObject
+import tao.test.flipaccounting.logic.AccountingFormController
 
 class MainActivity : AppCompatActivity() {
 
@@ -146,35 +156,272 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupNavigation() {
         val navHome = findViewById<View>(R.id.nav_home)
+        val navBills = findViewById<View>(R.id.nav_bills_tab)
         val navAI = findViewById<View>(R.id.nav_ai_config)
+
         val pageHome = findViewById<View>(R.id.page_home)
+        val pageBills = findViewById<View>(R.id.page_bills)
         val pageAI = findViewById<View>(R.id.page_ai_config)
 
         val tvHomeText = findViewById<TextView>(R.id.tv_home_text)
+        val tvBillsText = findViewById<TextView>(R.id.tv_bills_text)
         val tvAIText = findViewById<TextView>(R.id.tv_ai_text)
 
         navHome.setOnClickListener {
             pageHome.visibility = View.VISIBLE
+            pageBills.visibility = View.GONE
             pageAI.visibility = View.GONE
 
-            // 设置激活颜色 (首页)
-            tvHomeText.setTextColor(android.graphics.Color.parseColor("#5C6BC0"))
-            tvHomeText.setTypeface(null, android.graphics.Typeface.BOLD)
-            tvAIText.setTextColor(android.graphics.Color.parseColor("#666666"))
-            tvAIText.setTypeface(null, android.graphics.Typeface.NORMAL)
+            setNavActive(tvHomeText, listOf(tvBillsText, tvAIText))
+        }
+
+        navBills.setOnClickListener {
+            pageHome.visibility = View.GONE
+            pageBills.visibility = View.VISIBLE
+            pageAI.visibility = View.GONE
+
+            setNavActive(tvBillsText, listOf(tvHomeText, tvAIText))
+            loadBills()
         }
 
         navAI.setOnClickListener {
             pageHome.visibility = View.GONE
+            pageBills.visibility = View.GONE
             pageAI.visibility = View.VISIBLE
 
-            // 设置激活颜色 (AI 配置)
-            tvAIText.setTextColor(android.graphics.Color.parseColor("#5C6BC0"))
-            tvAIText.setTypeface(null, android.graphics.Typeface.BOLD)
-            tvHomeText.setTextColor(android.graphics.Color.parseColor("#666666"))
-            tvHomeText.setTypeface(null, android.graphics.Typeface.NORMAL)
+            setNavActive(tvAIText, listOf(tvHomeText, tvBillsText))
         }
     }
+
+    private fun setNavActive(active: TextView, others: List<TextView>) {
+        active.setTextColor(android.graphics.Color.parseColor("#5C6BC0"))
+        active.setTypeface(null, android.graphics.Typeface.BOLD)
+        others.forEach {
+            it.setTypeface(null, android.graphics.Typeface.NORMAL)
+        }
+    }
+
+    private fun findAssetIcon(ctx: Context, name: String): String {
+        if (name.isEmpty()) return ""
+        
+        // 1. 尝试从用户自定义资产中获取
+        // 注意：loadAssetsFromRaw 返回的是 List<BuiltInCategory>，而 getAssets 返回的是 List<Asset>
+        // 它们的数据结构不同，但都有 name 和 icon 属性
+        
+        // 先检查用户资产配置
+        val userAssets = Prefs.getAssets(ctx)
+        val userAsset = userAssets.find { it.name == name }
+        if (userAsset != null && userAsset.icon.isNotEmpty()) {
+            return userAsset.icon
+        }
+        
+        // 2. 如果用户资产没有图标，或者用户根本没存这个资产（仅仅是账单里有名字），尝试从内置库匹配
+        val builtIn = Prefs.loadAssetsFromRaw(ctx)
+        
+        // A. 精确匹配
+        var matched = builtIn.find { it.name == name }?.icon
+        
+        // B. 模糊匹配 (如果名字包含内置资产名，如"招商银行"包含"银行")
+        if (matched == null) {
+            // 这里逻辑按照长度倒序，优先匹配更长的词
+             val candidate = builtIn.sortedByDescending { it.name.length }
+                .find { name.contains(it.name) || it.name.contains(name) }
+             
+             matched = candidate?.icon
+        }
+
+        return matched ?: ""
+    }
+
+    private fun editBill(bill: Bill) {
+        if (!Settings.canDrawOverlays(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("需要权限")
+                .setMessage("修改账单需要悬浮窗权限，是否前往开启？")
+                .setPositiveButton("去开启") { _, _ ->
+                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivity(intent)
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            return
+        }
+
+        val json = JSONObject().apply {
+            put("amount", bill.amount)
+            put("type", bill.type)
+            put("asset_name", bill.assetName)
+            put("remarks", bill.remarks)
+            put("time", bill.time)
+            
+            if (bill.type == 2) {
+                // 如果是转账，解析出目标资产
+                val toAsset = bill.categoryName.replace("转账到 ", "").trim()
+                put("to_asset_name", toAsset)
+            } else {
+                put("category_name", bill.categoryName)
+            }
+        }
+        
+        OverlayManager(this).showOverlay(json)
+    }
+
+    private fun loadBills() {
+        val rv = findViewById<RecyclerView>(R.id.rv_bills)
+        val empty = findViewById<View>(R.id.tv_empty_bills)
+        val allBills = Prefs.getBills(this)
+
+        if (allBills.isEmpty()) {
+            rv.visibility = View.GONE
+            empty.visibility = View.VISIBLE
+        } else {
+            rv.visibility = View.VISIBLE
+            empty.visibility = View.GONE
+            rv.layoutManager = LinearLayoutManager(this)
+            
+            // 按记账时间降序排列
+            val sortedBills = allBills.sortedByDescending { it.time }
+
+            // 数据分块处理：按日期分组
+            val displayItems = mutableListOf<Any>()
+            var lastDate = ""
+            sortedBills.forEach { bill ->
+                val date = if(bill.time.length >= 10) bill.time.substring(0, 10) else "未知时间"
+                if (date != lastDate) {
+                    displayItems.add(date) // 日期标题
+                    lastDate = date
+                }
+                displayItems.add(bill)
+            }
+            rv.adapter = BillAdapter(displayItems)
+        }
+    }
+
+    inner class BillAdapter(private val items: List<Any>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        private val TYPE_DATE = 0
+        private val TYPE_BILL = 1
+
+        override fun getItemViewType(position: Int): Int {
+            return if (items[position] is String) TYPE_DATE else TYPE_BILL
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            return if (viewType == TYPE_DATE) {
+                val v = TextView(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(-1, -2)
+                    setPadding(16, 32, 16, 16)
+                    setTextColor(android.graphics.Color.parseColor("#777777"))
+                    textSize = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                object : RecyclerView.ViewHolder(v) {}
+            } else {
+                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_bill, parent, false)
+                BillViewHolder(v)
+            }
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            if (getItemViewType(position) == TYPE_DATE) {
+                (holder.itemView as TextView).text = items[position] as String
+            } else {
+                val bill = items[position] as Bill
+                val h = holder as BillViewHolder
+                
+                // 处理转账类型的显示名
+                if (bill.type == 2) {
+                    h.category.text = "转账"
+                    h.detail.text = "${bill.assetName} ➔ ${bill.categoryName.replace("转账到 ", "")}"
+                } else {
+                    h.category.text = if (bill.categoryName.contains(" > ")) bill.categoryName.split(" > ").last() else bill.categoryName
+                    h.detail.text = "${bill.assetName}${if(bill.remarks.isNotEmpty()) " | ${bill.remarks}" else ""}"
+                }
+
+                h.time.text = if(bill.time.length > 11) bill.time.substring(11) else ""
+                
+                // 金额显示逻辑
+                val amountText = String.format("%.2f", bill.amount)
+                when(bill.type) {
+                    1 -> { // 收入
+                        h.amount.text = "+$amountText"
+                        h.amount.setTextColor(android.graphics.Color.parseColor("#388E3C"))
+                    }
+                    2 -> { // 转账
+                        h.amount.text = amountText
+                        h.amount.setTextColor(android.graphics.Color.parseColor("#333333"))
+                    }
+                    else -> { // 支出
+                        h.amount.text = "-$amountText"
+                        h.amount.setTextColor(android.graphics.Color.parseColor("#D32F2F"))
+                    }
+                }
+                
+                // 加载图标
+                // 优先使用 bill 自身存储的 iconUrl (针对 AI 记账场景优化)
+                // 如果为空 (旧数据)，则通过 Helper 实时查找
+                val catIcon = if (bill.iconUrl.isNotEmpty()) {
+                    bill.iconUrl
+                } else {
+                    CategoryIconHelper.findCategoryIcon(this@MainActivity, bill.categoryName, bill.type)
+                }
+
+                val defaultResId = if(bill.type == 1) android.R.drawable.ic_input_add else android.R.drawable.ic_menu_edit
+                
+                if (catIcon.isNotEmpty()) {
+                    Glide.with(this@MainActivity)
+                        .load(catIcon)
+                        .transform(CircleCrop())
+                        .error(defaultResId) // 加载失败时显示默认图标
+                        .into(h.categoryIcon)
+                } else {
+                    h.categoryIcon.setImageResource(defaultResId)
+                }
+
+                // 加载资产图标
+                val assetIcon = findAssetIcon(this@MainActivity, bill.assetName)
+                if (assetIcon.isNotEmpty()) {
+                    h.assetIcon.visibility = View.VISIBLE
+                    Glide.with(this@MainActivity)
+                        .load(assetIcon)
+                        .transform(CircleCrop())
+                        .into(h.assetIcon)
+                } else {
+                    h.assetIcon.visibility = View.GONE
+                }
+
+                h.itemView.setOnClickListener {
+                    editBill(bill)
+                }
+
+                // 长按删除
+                h.itemView.setOnLongClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("确认删除")
+                        .setMessage("确定要删除这条账单记录吗？")
+                        .setPositiveButton("删除") { _, _ ->
+                            Prefs.deleteBill(this@MainActivity, bill)
+                            loadBills() // 刷新列表
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                    true
+                }
+            }
+        }
+        override fun getItemCount() = items.size
+    }
+
+    class BillViewHolder(v: View) : RecyclerView.ViewHolder(v) {
+        val categoryIcon = v.findViewById<ImageView>(R.id.iv_bill_category_icon)
+        val assetIcon = v.findViewById<ImageView>(R.id.iv_bill_asset_icon)
+        val category = v.findViewById<TextView>(R.id.tv_bill_category)
+        val detail = v.findViewById<TextView>(R.id.tv_bill_detail)
+        val time = v.findViewById<TextView>(R.id.tv_bill_time)
+        val amount = v.findViewById<TextView>(R.id.tv_bill_amount)
+    }
+
+
 
     private fun setupAIConfigPage() {
         val spinnerProviders = findViewById<Spinner>(R.id.spinner_providers)
