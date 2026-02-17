@@ -366,6 +366,27 @@
                     android:layout_marginTop="-4dp"
                     android:paddingBottom="8dp"/>
 
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_flip_always"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="全局感应 (无需 Shizuku)"
+                    android:textColor="#333333"
+                    android:textSize="13sp"
+                    app:switchPadding="12dp"
+                    android:layout_marginStart="24dp"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="忽略白名单在所有场景触发。建议调高灵敏度防误触。"
+                    android:textColor="#999999"
+                    android:textSize="10sp"
+                    android:layout_marginTop="-4dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingBottom="8dp"/>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
