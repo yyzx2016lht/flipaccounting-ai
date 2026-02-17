@@ -22,6 +22,7 @@ class OverlayManager(private val ctx: Context) {
 
     fun showOverlay(prefill: JSONObject? = null) {
         if (overlayView != null) return
+        Logger.d(ctx, "OverlayManager", "Showing Overlay")
 
         windowManager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
@@ -83,7 +84,10 @@ class OverlayManager(private val ctx: Context) {
     }
 
     fun removeOverlay() {
-        overlayView?.let { try { windowManager?.removeView(it) } catch (e: Exception) {} }
+        if (overlayView != null) {
+            Logger.d(ctx, "OverlayManager", "Removing Overlay")
+            windowManager?.removeView(overlayView)
+        }
         overlayView = null
         formController = null
     }

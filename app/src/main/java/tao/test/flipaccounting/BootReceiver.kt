@@ -13,7 +13,9 @@ class BootReceiver : BroadcastReceiver() {
         if (!Prefs.isFlipEnabled(context)) return
 
         val action = intent.action
-        if (Intent.ACTION_BOOT_COMPLETED == action || "tao.test.flipaccounting.RESTART_SERVICE" == action) {
+        if (Intent.ACTION_BOOT_COMPLETED == action || 
+            Intent.ACTION_MY_PACKAGE_REPLACED == action ||
+            "tao.test.flipaccounting.RESTART_SERVICE" == action) {
 
             // 启动前台服务
             val serviceIntent = Intent(context, OverlayService::class.java).apply {

@@ -10,6 +10,7 @@ import android.os.SystemClock
  * 翻转检测器：通过加速度/重力传感器检测快速翻转动作
  */
 class FlipDetector(
+    private val ctx: android.content.Context,
     private val manager: SensorManager,
     private val debounceMs: Long = 500L, // 两次触发之间的防抖时间
     private val onFlipChange: () -> Unit
@@ -53,10 +54,12 @@ class FlipDetector(
         if (currentFace == Face.DOWN) {
             // 记录手机开始“面朝下”的时刻
             faceDownTime = now
+            Logger.d(ctx, "FlipDetector", "Face DOWN detected")
         } else if (currentFace == Face.UP) {
             // 当检测到“面朝上”时，检查之前是否是“面朝下”
             if (lastFace == Face.DOWN) {
                 val flipDuration = now - faceDownTime
+                Logger.d(ctx, "FlipDetector", "Flip distance: ${flipDuration}ms")
 
                 // 判断动作快慢：只有翻转过程耗时在设定范围内，且满足防抖时间
                 if (flipDuration < MAX_FLIP_DURATION && (now - lastTriggerTime > debounceMs)) {

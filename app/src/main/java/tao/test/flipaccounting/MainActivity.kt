@@ -30,6 +30,7 @@ import androidx.recyclerview.widget.RecyclerView
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.ImageView
+import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CircleCrop
 import org.json.JSONObject
@@ -66,6 +67,14 @@ class MainActivity : AppCompatActivity() {
         // 初始化 AI 配置页逻辑
         setupAIConfigPage()
 
+        // 核心修复：启动时如果开关是开启的，确保服务也在运行
+        if (Prefs.isFlipEnabled(this)) {
+            val intent = Intent(this, OverlayService::class.java).apply {
+                action = OverlayService.ACTION_START_FLIP
+            }
+            startServiceCompat(intent)
+        }
+
         // --- 1. 权限与悬浮窗 ---
         findViewById<MaterialButton>(R.id.btnRequestOverlay).setOnClickListener {
             if (!Settings.canDrawOverlays(this)) {
@@ -89,6 +98,32 @@ class MainActivity : AppCompatActivity() {
         }
 
         // --- 2. 开关逻辑 ---
+
+        // 日志开关
+        val btnShareLogs = findViewById<MaterialButton>(R.id.btn_share_logs)
+        findViewById<SwitchMaterial>(R.id.switch_logging).apply {
+            isChecked = Prefs.isLoggingEnabled(this@MainActivity)
+            btnShareLogs.visibility = if (isChecked) View.VISIBLE else View.GONE
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setLoggingEnabled(this@MainActivity, isChecked)
+                btnShareLogs.visibility = if (isChecked) View.VISIBLE else View.GONE
+                if (isChecked) {
+                    Utils.toast(context, "日志记录已开启")
+                } else {
+                    Logger.clearLogs(context)
+                    Utils.toast(context, "日志记录已关闭并清空")
+                }
+            }
+        }
+
+        btnShareLogs.setOnClickListener {
+            val logFile = Logger.getLogFile(this)
+            if (!logFile.exists() || logFile.length() == 0L) {
+                Utils.toast(this, "当前没有日志内容")
+                return@setOnClickListener
+            }
+            startActivity(Intent(this, LogViewerActivity::class.java))
+        }
 
         // 翻转开关
         findViewById<SwitchMaterial>(R.id.switch_flip_trigger).apply {
@@ -329,10 +364,11 @@ class MainActivity : AppCompatActivity() {
                 val bill = items[position] as Bill
                 val h = holder as BillViewHolder
                 
-                // 处理转账类型的显示名
-                if (bill.type == 2) {
-                    h.category.text = "转账"
-                    h.detail.text = "${bill.assetName} ➔ ${bill.categoryName.replace("转账到 ", "")}"
+                // 处理转账/还款类型的显示名
+                if (bill.type == 2 || bill.type == 3) {
+                    h.category.text = if (bill.type == 2) "转账" else "还款"
+                    val icon = if (bill.type == 2) " ➔ " else " ➔ "
+                    h.detail.text = "${bill.assetName}$icon${bill.categoryName.replace("转账到 ", "").replace("还款到 ", "")}"
                 } else {
                     h.category.text = if (bill.categoryName.contains(" > ")) bill.categoryName.split(" > ").last() else bill.categoryName
                     h.detail.text = "${bill.assetName}${if(bill.remarks.isNotEmpty()) " | ${bill.remarks}" else ""}"
@@ -347,7 +383,7 @@ class MainActivity : AppCompatActivity() {
                         h.amount.text = "+$amountText"
                         h.amount.setTextColor(android.graphics.Color.parseColor("#388E3C"))
                     }
-                    2 -> { // 转账
+                    2, 3 -> { // 转账 或 还款
                         h.amount.text = amountText
                         h.amount.setTextColor(android.graphics.Color.parseColor("#333333"))
                     }
@@ -429,6 +465,7 @@ class MainActivity : AppCompatActivity() {
         val etKey = findViewById<EditText>(R.id.et_api_key)
         val spinnerModels = findViewById<Spinner>(R.id.spinner_models)
         val etPrompt = findViewById<EditText>(R.id.et_custom_prompt)
+        val btnResetPrompt = findViewById<MaterialButton>(R.id.btn_reset_prompt)
         val btnTest = findViewById<MaterialButton>(R.id.btn_test_conn)
         val btnSave = findViewById<MaterialButton>(R.id.btn_save_config)
 
@@ -453,6 +490,18 @@ class MainActivity : AppCompatActivity() {
         etUrl.setText(currentUrl)
         etKey.setText(currentKey)
         etPrompt.setText(currentPrompt)
+
+        btnResetPrompt.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("确定恢复默认？")
+                .setMessage("这将清除您的自定义提示词，并恢复为系统最新的默认版本（包含对'还款'模式的识别优化）。")
+                .setPositiveButton("恢复") { _, _ ->
+                    etPrompt.setText(AIService.DEFAULT_PROMPT)
+                    Utils.toast(this, "已恢复，请记得点击下方的'保存配置'")
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
 
         val modelList = if (currentModel.isNotEmpty()) mutableListOf(currentModel) else mutableListOf()
         val modelAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modelList)

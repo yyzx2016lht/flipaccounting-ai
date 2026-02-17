@@ -86,17 +86,18 @@ class AccountingFormController(
         spType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, p3: Long) {
                 when (pos) {
-                    2 -> { // 转账
+                    2, 3 -> { // 转账(2)或还款(3)
                         layoutCategory.visibility = View.GONE
                         layoutAccount2.visibility = View.VISIBLE
-                        layoutFee.visibility = View.VISIBLE
-                        if (tvAccount.text.toString().contains("选择")) {
-                            tvAccount.text = "选择转出账户"
+                        layoutFee.visibility = if (pos == 2) View.VISIBLE else View.GONE
+                        
+                        if (tvAccount.text.toString().contains("选择") || tvAccount.text.toString().contains("资产")) {
+                            tvAccount.text = if (pos == 2) "选择转出账户" else "选择付款账户"
                         }
-                        if (tvAccount2.text.toString().contains("选择")) {
-                            tvAccount2.text = "转入账户"
+                        if (tvAccount2.text.toString().contains("选择") || tvAccount2.text.toString().contains("账户")) {
+                            tvAccount2.text = if (pos == 2) "转入账户" else "还款账户(信用卡)"
                         }
-                        etMoney.hint = "转账金额"
+                        etMoney.hint = if (pos == 2) "转账金额" else "还款金额"
                     }
                     else -> { // 支出(0)或收入(1)
                         layoutCategory.visibility = View.VISIBLE
@@ -130,10 +131,11 @@ class AccountingFormController(
         var finalMoney = rawMoneyStr.toDouble()
         var finalCategory = if (tvCategory.text.contains("选择")) "" else tvCategory.text.toString().replace(" > ", "/::/").replace(">", "/::/")
 
-        if (typeIndex == 2) { // 转账模式
+        if (typeIndex == 2 || typeIndex == 3) { // 转账或还款模式
             account2 = if (tvAccount2.text.contains("选择")) "" else tvAccount2.text.toString()
             if (account1.isEmpty() || account2.isEmpty()) {
-                Utils.toast(ctx, "转账需选择两个账户")
+                val msg = if (typeIndex == 2) "转账需选择两个账户" else "还款需选择付款和还款账户"
+                Utils.toast(ctx, msg)
                 return
             }
             val feeVal = etFee.text.toString().toDoubleOrNull() ?: 0.0
@@ -155,15 +157,19 @@ class AccountingFormController(
         )
 
         // 如果分类中包含 /::/，说明是 AI 识别的层级结构，需要保留 /::/ 用于传给钱迹，但在显示时替换为 >
-        val finalCategoryString = if (typeIndex == 2) "转账到 $account2" else finalCategory.replace("/::/", " > ")
+        val finalCategoryString = when (typeIndex) {
+            2 -> "转账到 $account2"
+            3 -> "还款到 $account2"
+            else -> finalCategory.replace("/::/", " > ")
+        }
 
         // 核心修改：在此处计算并保存图标，确保 AI 记账也能有图标
-        val resolvedIcon = tao.test.flipaccounting.CategoryIconHelper.findCategoryIcon(ctx, if (typeIndex == 2) "转账" else finalCategoryString, typeIndex)
+        val resolvedIcon = tao.test.flipaccounting.CategoryIconHelper.findCategoryIcon(ctx, if (typeIndex == 2 || typeIndex == 3) "转账" else finalCategoryString, typeIndex)
 
         // 保存到本地数据库 (SharedPreferences)
         val bill = Bill(
             finalMoney,
-            typeIndex, // 0-支出, 1-收入, 2-转账
+            typeIndex, // 0-支出, 1-收入, 2-转账, 3-还款
             account1,
             finalCategoryString,
             tvTime.text.toString(),
@@ -202,7 +208,7 @@ class AccountingFormController(
             }
 
             // C. 根据类型填充其他数据
-            if (targetType == 2) { // 转账
+            if (targetType == 2 || targetType == 3) { // 转账 或 还款
                 val toAsset = result.optString("to_asset_name", "")
                 if (toAsset.isNotEmpty()) {
                     tvAccount2.text = toAsset

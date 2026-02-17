@@ -6,6 +6,7 @@
         <item>支出</item>
         <item>收入</item>
         <item>转账</item>
+        <item>还款</item>
     </string-array>
     <string-array name="asset_types">
         <item>普通资产</item>

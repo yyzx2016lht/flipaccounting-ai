@@ -22,7 +22,7 @@ data class Asset(
 
 data class Bill(
     val amount: Double,
-    val type: Int, // 0-支出, 1-收入
+    val type: Int, // 0-支出, 1-收入, 2-转账, 3-还款
     val assetName: String,
     val categoryName: String,
     val time: String,
@@ -42,6 +42,7 @@ object Prefs {
     private const val KEY_WHITE_LIST = "app_white_list"
     private const val KEY_ASSETS = "assets_v1"
     private const val KEY_HIDE_RECENTS = "hide_recents_card"
+    private const val KEY_LOGGING_ENABLED = "logging_enabled"
     private const val KEY_CAT_EXPENSE = "cat_expense_v1"
     private const val KEY_CAT_INCOME = "cat_income_v1"
     private const val KEY_AI_KEY = "ai_api_key"
@@ -63,6 +64,9 @@ object Prefs {
 
     fun isHideRecents(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_HIDE_RECENTS, false)
     fun setHideRecents(ctx: Context, hide: Boolean) = prefs(ctx).edit().putBoolean(KEY_HIDE_RECENTS, hide).apply()
+
+    fun isLoggingEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_LOGGING_ENABLED, false)
+    fun setLoggingEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_LOGGING_ENABLED, enabled).apply()
 
     // --- AI 配置 ---
     fun getAiKey(ctx: Context): String = prefs(ctx).getString(KEY_AI_KEY, "") ?: ""

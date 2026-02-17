@@ -46,8 +46,8 @@ object Utils {
         val upCurrency = if (currency.isNullOrBlank()) "CNY" else currency.uppercase()
         appendKV("currency", upCurrency)
 
-        // 3. 手续费 (仅转账有效，且必须 <= money)
-        if (type == "2" && !fee.isNullOrEmpty() && fee != "0") {
+        // 3. 手续费 (转账/还款有效，且必须 <= money)
+        if ((type == "2" || type == "3") && !fee.isNullOrEmpty() && fee != "0") {
             appendKV("fee", fee)
         }
 
@@ -76,6 +76,22 @@ object Utils {
             name.contains("医疗") -> android.R.drawable.ic_menu_mylocation
             name.contains("学习") -> android.R.drawable.ic_menu_edit
             else -> android.R.drawable.ic_menu_help
+        }
+    }
+
+    /**
+     * 系统震动反馈
+     */
+    fun vibrate(ctx: Context, duration: Long = 50) {
+        val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION") ctx.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            vibrator.vibrate(android.os.VibrationEffect.createOneShot(duration, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            vibrator.vibrate(duration)
         }
     }
 }

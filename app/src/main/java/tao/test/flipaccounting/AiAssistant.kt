@@ -196,26 +196,38 @@ class AiAssistant(private val ctx: Context) {
         val type = result.optInt("type", 0)
         val amt = result.optDouble("amount", 0.0)
         val fee = result.optDouble("fee", 0.0)
-        val symbol = if (type == 1) "+" else if (type == 2) "⇄" else "-"
+        val symbol = when(type) {
+            1 -> "+"
+            2 -> "⇄"
+            3 -> "💸" // 还款标志
+            else -> "-"
+        }
 
-        tvResMoney.text = "$symbol $amt"
+        tvResMoney.text = if (type == 1) "+$amt" else if (type == 2 || type == 3) "$amt" else "-$amt"
+        
         val timeStr = result.optString("time", "")
         if (timeStr.isNotEmpty()) {
             tvResTime.text = "时间: $timeStr"
             tvResTime.visibility = View.VISIBLE
         } else {
-            // 如果 AI 没返回时间，显示“当前时间”或隐藏
-            // 这里建议显示 "当前时间" 让界面保持整齐，或者隐藏
-            tvResTime.text = "时间: 当前时间"
-            // tvResTime.visibility = View.GONE // 或者选择隐藏
+            tvResTime.text = "时间: 现在"
         }
-        if (type == 2) {
-            tvResCate.text = "转入: ${result.optString("to_asset_name", "--")}"
-            tvResAsset.text = "转出: ${result.optString("asset_name", "--")}"
-        } else {
-            tvResCate.text = "分类: ${result.optString("category_name", "--")}"
-            val assetName = result.optString("asset_name", "")
-            tvResAsset.text = "账户: ${if (assetName.isEmpty()) "未识别" else assetName}"
+
+        when (type) {
+            2 -> { // 转账
+                tvResCate.text = "转入: ${result.optString("to_asset_name", "--")}"
+                tvResAsset.text = "转出: ${result.optString("asset_name", "--")}"
+            }
+            3 -> { // 还款
+                tvResCate.text = "还款给: ${result.optString("to_asset_name", "--")}"
+                tvResAsset.text = "支付方: ${result.optString("asset_name", "--")}"
+            }
+            else -> { // 支出、收入
+                val cat = result.optString("category_name", "--")
+                tvResCate.text = "分类: ${cat.replace("/::/", " > ")}"
+                val assetName = result.optString("asset_name", "")
+                tvResAsset.text = "账户: ${if (assetName.isEmpty()) "未识别" else assetName}"
+            }
         }
 
         // 切换视图

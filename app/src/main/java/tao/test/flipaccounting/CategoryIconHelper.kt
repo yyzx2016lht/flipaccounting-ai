@@ -5,8 +5,8 @@ import android.content.Context
 object CategoryIconHelper {
 
     fun findCategoryIcon(ctx: Context, name: String, type: Int): String {
-        // 如果是转账类型或名称包含关键字，返回转账图标
-        if (type == 2 || name.contains("转账到")) return "http://res3.qianjiapp.com/catev2/cate_icon_zhuanzhang.png"
+        // 如果是转账/还款类型或名称包含关键字，返回转账图标
+        if (type == 2 || type == 3 || name.contains("转账到") || name.contains("还款到")) return "http://res3.qianjiapp.com/catev2/cate_icon_zhuanzhang.png"
         
         // 1. 标准化名称：去除层级，只取最后一段 (例如 "餐饮 > 早餐" -> "早餐")
         val leafName = if (name.contains(" > ")) name.split(" > ").last().trim() else name.trim()

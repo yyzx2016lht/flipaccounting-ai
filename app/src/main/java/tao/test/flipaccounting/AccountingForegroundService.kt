@@ -18,7 +18,7 @@ class AccountingForegroundService : Service() {
 
         // 初始化翻转检测
         val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        detector = FlipDetector(sensorManager) {
+        detector = FlipDetector(this, sensorManager) {
             // 当翻转发生时执行
             triggerVibration()
             showFloatingWindow()

@@ -380,6 +380,46 @@
                             android:textColor="#333333"
                             android:textSize="16sp" />
 
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="#F0F0F0"
+                            android:layout_marginHorizontal="20dp"/>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="20dp">
+
+                            <com.google.android.material.switchmaterial.SwitchMaterial
+                                android:id="@+id/switch_logging"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="🐞   记录运行日志"
+                                android:textSize="16sp"
+                                android:textColor="#333333"/>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="开启后会记录详细的运行信息，用于故障排查。"
+                                android:textColor="#999999"
+                                android:textSize="12sp"/>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_share_logs"
+                                style="@style/Widget.MaterialComponents.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:text="查看并分享日志"
+                                android:textColor="#5C6BC0"
+                                android:visibility="gone"
+                                app:icon="@android:drawable/ic_menu_search"/>
+                        </LinearLayout>
+
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
@@ -521,6 +561,19 @@
                     android:layout_marginBottom="30dp"/>
 
                 <!-- 按钮组 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_reset_prompt"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="恢复默认提示词"
+                    app:cornerRadius="12dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_marginBottom="12dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:textColor="#757575"
+                    app:strokeColor="#DDDDDD"/>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_test_conn"
                     android:layout_width="match_parent"

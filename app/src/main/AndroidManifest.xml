@@ -50,6 +50,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="tao.test.flipaccounting.RESTART_SERVICE" />
             </intent-filter>
         </receiver>
@@ -60,6 +61,17 @@
 
         <activity android:name=".SettingsActivity" android:label="分类管理" />
         <activity android:name=".AddCategoryActivity" android:label="新增分类" />
+        <activity android:name=".LogViewerActivity" android:label="日志查看器" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="tao.test.flipaccounting.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

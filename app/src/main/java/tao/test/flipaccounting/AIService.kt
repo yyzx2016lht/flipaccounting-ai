@@ -56,11 +56,21 @@ object AIService {
 2. 支出分类库: {{EXPENSE_CATS}}
 3. 收入分类库: {{INCOME_CATS}}
 
-【匹配逻辑】
-1. **Category (分类)**: 理解物品语义，在分类库中找到最匹配的那一项。**必须原样返回字符串**。
-2. **Asset (资产)**: 
-   - 提取用户明确提到的账户（如“招行”、“微信”）。
-   - **重要约束：如果用户未提及任何资产关键词，必须返回空字符串 ""。绝对禁止默认为“现金”或列表中的第一项。**
+【Type (记账类型) 定义】
+- 0: 支出 (默认消费)
+- 1: 收入 (工资、红包、退款等)
+- 2: 转账 (资金在两个自有账户间流动)
+- 3: 还款 (偿还信用卡、花呗、白条、贷款等债务)
+
+【匹配逻辑 (Matching Logic)】
+1. **Category (分类)**: 仅对支出/收入有效。在库中找到最匹配语义的一项。**必须原样返回字符串**。如果是转账或还款，返回空字符串 ""。
+2. **Asset (资产)**:
+   - `asset_name`: 
+        - 支出/收入：支付来源 (如"用微信买"，则为"微信")。
+        - 转账/还款：**转出方/付款方** (如"招行还花呗"，则为"招行")。
+   - `to_asset_name`: 
+        - 仅用于转账/还款：**转入方/还款对象** (如"还花呗"，则为"花呗")。
+   - **约束：如果未提及资产，必须返回 "" (空字符串)。**
 3. **Time (时间)**: 基于基准时间推算，格式 yyyy-MM-dd HH:mm:ss。
 
 【JSON 输出格式】
@@ -71,6 +81,12 @@ object AIService {
 
 输入: "刚才用{{DEMO_ASSET}} 买东西花了100"
 输出: {"amount":100.0, "type":0, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"买东西"}
+
+输入: "招商银行还抖音月付90.98"
+输出: {"amount":90.98, "type":3, "asset_name":"招商银行", "to_asset_name":"抖音月付", "category_name":"", "time":"...", "remarks":"还款"}
+
+输入: "从{{DEMO_ASSET}} 转了1000到支付宝"
+输出: {"amount":1000.0, "type":2, "asset_name":"{{DEMO_ASSET}}", "to_asset_name":"支付宝", "category_name":"", "time":"...", "remarks":"转账"}
 
 输入: "昨天吃了一碗面20"
 输出: {"amount":20.0, "type":0, "asset_name":"", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"吃面"}
@@ -120,6 +136,7 @@ object AIService {
     // 核心：分析记账文本
     // 核心：分析记账文本
     suspend fun analyzeAccounting(ctx: Context, userInput: String): JSONObject? {
+        Logger.d(ctx, "AIService", "Analyzing: $userInput")
         val apiKey = Prefs.getAiKey(ctx)
         val model = Prefs.getAiModel(ctx)
         if (apiKey.isEmpty()) return null
@@ -165,12 +182,15 @@ object AIService {
                 Message("user", userInput)
             )
             val request = ChatRequest(model, messages)
+            Logger.d(ctx, "AIService", "Requesting AI: $model")
             val response = getApi(ctx).chat("Bearer $apiKey", request)
             // 注意：API 返回的 content 可能是字符串形式的 JSON，或者是直接对象
             // 硅基流动通常返回字符串格式，需要解析
             val content = response.choices.first().message.content
+            Logger.d(ctx, "AIService", "AI Response: $content")
             JSONObject(content)
         } catch (e: Exception) {
+            Logger.d(ctx, "AIService", "AI Request Failed: ${e.message}")
             e.printStackTrace()
             null
         }

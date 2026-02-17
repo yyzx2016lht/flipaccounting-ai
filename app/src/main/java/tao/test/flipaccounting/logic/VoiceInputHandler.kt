@@ -21,47 +21,64 @@ class VoiceInputHandler(
 ) {
     private var mediaRecorder: android.media.MediaRecorder? = null
     private var audioFile: File? = null
+    
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var isRecording = false
 
     fun setupVoiceButton(btnVoice: View) {
         btnVoice.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    // 1. 按下：立即唤起 AI 弹窗，并设为“录音模式”
-                    aiAssistant.showInputPanel(mode = AiAssistant.MODE_RECORDING) { resultJson ->
-                        onResult(resultJson)
-                    }
+                    // 1. 立即缩放动画，即使是短按也有反馈
+                    v.animate().scaleX(1.3f).scaleY(1.3f).setDuration(100).start()
+                    
+                    // 2. 延迟判断长按
+                    isRecording = false
+                    handler.postDelayed({
+                        isRecording = true
+                        // 触发震动反馈：长按确认进入录音
+                        Utils.vibrate(ctx) 
+                        
+                        aiAssistant.showInputPanel(mode = AiAssistant.MODE_RECORDING) { resultJson ->
+                            onResult(resultJson)
+                        }
 
-                    // 2. 开始录音
-                    try {
-                        startRecording()
-                        v.animate().scaleX(1.3f).scaleY(1.3f).setDuration(100).start()
-                    } catch (e: Exception) {
-                        aiAssistant.dismiss()
-                        Utils.toast(ctx, "录音启动失败")
-                    }
+                        try {
+                            startRecording()
+                        } catch (e: Exception) {
+                            aiAssistant.dismiss()
+                            Utils.toast(ctx, "录音启动失败")
+                            isRecording = false
+                        }
+                    }, 200) // 200ms 作为触发阈值
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    // 3. 松开：停止录音
                     v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
+                    
+                    // 取消延迟任务，防止短按触发录音
+                    handler.removeCallbacksAndMessages(null)
 
-                    stopRecording { file ->
-                        CoroutineScope(Dispatchers.IO).launch {
-                            // 4. 调用 API 转文字
-                            val text = AIService.speechToText(ctx, file)
+                    if (isRecording) {
+                        isRecording = false
+                        stopRecording { file ->
+                            CoroutineScope(Dispatchers.IO).launch {
+                                // 4. 调用 API 转文字
+                                val text = AIService.speechToText(ctx, file)
 
-                            withContext(Dispatchers.Main) {
-                                if (!text.isNullOrEmpty()) {
-                                    // 5. 成功：更新弹窗，显示识别文本，并自动开始 AI 分析
-                                    aiAssistant.showInputPanel(
-                                        defaultText = text,
-                                        mode = AiAssistant.MODE_LOADING
-                                    ) { resultJson ->
-                                        onResult(resultJson)
+                                withContext(Dispatchers.Main) {
+                                    if (!text.isNullOrEmpty()) {
+                                        // 5. 成功：显示结果
+                                        aiAssistant.showInputPanel(
+                                            defaultText = text,
+                                            mode = AiAssistant.MODE_LOADING
+                                        ) { resultJson ->
+                                            onResult(resultJson)
+                                        }
+                                    } else {
+                                        aiAssistant.dismiss()
+                                        Utils.toast(ctx, "未检测到语音")
                                     }
-                                } else {
-                                    aiAssistant.dismiss()
-                                    Utils.toast(ctx, "未检测到语音")
                                 }
                             }
                         }

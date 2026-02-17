@@ -34,6 +34,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Logger.d(this, "OverlayService", "Service Created")
 
         // 使用 this (Service Context) 而不是 applicationContext，
         // 这样系统能正确将麦克风访问关联到这个前台服务。
@@ -66,6 +67,7 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Logger.d(this, "OverlayService", "onStartCommand: ${intent?.action}")
         if (intent == null) {
             // 服务被系统重启，恢复状态
             isFlipEnabled = Prefs.isFlipEnabled(this)
@@ -111,11 +113,25 @@ class OverlayService : Service() {
         val whiteList = Prefs.getAppWhiteList(this)
         val currentApp = ShizukuShell.getForegroundApp() //
 
+        Logger.d(this, "OverlayService", "Trigger Logic -> Current Foreground: $currentApp, Whitelist: $whiteList")
+
         // 2. 判断是否允许触发
-        // 规则：白名单为空(允许所有) OR 当前应用在白名单内 OR 当前应用是自己
-        val isAllowed = whiteList.isEmpty() ||
-                (currentApp != null && whiteList.contains(currentApp)) ||
-                currentApp == packageName
+        // 规则说明：
+        // - 如果当前就在本 App 内，始终允许触发。
+        // - 如果白名单不为空，则进入【严格模式】：只允许白名单内的应用触发。
+        // - 如果白名单为空，为了避免刚装好就在微信等不相干应用中乱跳，我们默认进入【安全模式】：
+        //   除非无法检测到当前应用（Shizuku未授权），否则不自动感应。这样用户必须手动在白名单添加应用后，感应才生效。
+        
+        val isAllowed = when {
+            currentApp == packageName -> true
+            whiteList.contains(currentApp) -> true
+            whiteList.isEmpty() -> {
+                // 如果白名单为空，且我们明确知道是在其他 App（如微信），则不允许触发
+                // 但如果检测不到当前 App（currentApp == null），我们依然允许触发，作为兜底
+                currentApp == null
+            }
+            else -> false
+        }
 
         if (isAllowed) {
             // 3. 只有允许时，才震动
@@ -131,15 +147,18 @@ class OverlayService : Service() {
     // --- Flip Detector ---
     private fun startFlipDetection() {
         if (flipDetector != null) return
-        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        flipDetector = FlipDetector(sm) {
-            // 触发回调时，执行统一检查
+        Logger.d(this, "OverlayService", "Starting FlipDetector")
+        val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        flipDetector = FlipDetector(this, sensorManager) {
+            Logger.d(this, "OverlayService", "Flip Triggered!")
+            // 翻转成功，弹出悬浮窗
             checkAndShowOverlay()
         }
         flipDetector?.start()
     }
 
     private fun stopFlipDetection() {
+        Logger.d(this, "OverlayService", "Stopping FlipDetector")
         flipDetector?.stop()
         flipDetector = null
     }
