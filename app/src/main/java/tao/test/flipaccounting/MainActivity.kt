@@ -51,6 +51,8 @@ class MainActivity : AppCompatActivity() {
         "小米MiMo" to "https://api.xiaomimimo.com"
     )
 
+    private var currentSortByBillTime = true // true: 按账单时间, false: 按记账时间
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -305,35 +307,147 @@ class MainActivity : AppCompatActivity() {
     private fun loadBills() {
         val rv = findViewById<RecyclerView>(R.id.rv_bills)
         val empty = findViewById<View>(R.id.tv_empty_bills)
+        val btnEdit = findViewById<MaterialButton>(R.id.btn_edit_bills)
+        val layoutBatch = findViewById<View>(R.id.layout_batch_actions)
+        val btnSelectAll = findViewById<MaterialButton>(R.id.btn_select_all)
+        val btnBatchDelete = findViewById<View>(R.id.btn_batch_delete)
+        val btnBatchSync = findViewById<View>(R.id.btn_batch_sync)
+        val tvSortStatus = findViewById<TextView>(R.id.tv_current_sort)
+        val btnToggleSort = findViewById<MaterialButton>(R.id.btn_toggle_sort)
+        
         val allBills = Prefs.getBills(this)
 
         if (allBills.isEmpty()) {
             rv.visibility = View.GONE
             empty.visibility = View.VISIBLE
+            btnEdit.visibility = View.GONE
+            layoutBatch.visibility = View.GONE
         } else {
             rv.visibility = View.VISIBLE
             empty.visibility = View.GONE
+            btnEdit.visibility = View.VISIBLE
             rv.layoutManager = LinearLayoutManager(this)
             
-            // 按记账时间降序排列
-            val sortedBills = allBills.sortedByDescending { it.time }
+            // 排序逻辑
+            tvSortStatus.text = if (currentSortByBillTime) "账单时间排序" else "记录时间排序"
+
+            val sortedBills = if (currentSortByBillTime) {
+                allBills.sortedByDescending { it.time }
+            } else {
+                // 记账时间可能为空（旧数据），优先按记录生成顺序
+                allBills.sortedWith(compareByDescending<Bill> { it.recordTime }.thenByDescending { it.time })
+            }
+
+            btnToggleSort.setOnClickListener {
+                currentSortByBillTime = !currentSortByBillTime
+                loadBills()
+            }
 
             // 数据分块处理：按日期分组
             val displayItems = mutableListOf<Any>()
             var lastDate = ""
             sortedBills.forEach { bill ->
-                val date = if(bill.time.length >= 10) bill.time.substring(0, 10) else "未知时间"
+                val timeToUse = if (currentSortByBillTime) bill.time else bill.recordTime
+                val date = if(timeToUse.length >= 10) timeToUse.substring(0, 10) else "未知时间"
                 if (date != lastDate) {
                     displayItems.add(date) // 日期标题
                     lastDate = date
                 }
                 displayItems.add(bill)
             }
-            rv.adapter = BillAdapter(displayItems)
+            
+            val adapter = BillAdapter(displayItems)
+            rv.adapter = adapter
+
+            btnEdit.setOnClickListener {
+                if (adapter.isSelectionMode) {
+                    adapter.isSelectionMode = false
+                    adapter.selectedBills.clear()
+                    btnEdit.text = "编辑"
+                    layoutBatch.visibility = View.GONE
+                } else {
+                    adapter.isSelectionMode = true
+                    btnEdit.text = "取消"
+                    layoutBatch.visibility = View.VISIBLE
+                }
+                adapter.notifyDataSetChanged()
+            }
+
+            btnSelectAll.setOnClickListener {
+                if (adapter.selectedBills.size == allBills.size) {
+                    adapter.selectedBills.clear()
+                } else {
+                    adapter.selectedBills.addAll(allBills)
+                }
+                adapter.notifyDataSetChanged()
+            }
+
+            btnBatchDelete.setOnClickListener {
+                if (adapter.selectedBills.isEmpty()) {
+                    Utils.toast(this, "未选中任何账单")
+                    return@setOnClickListener
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("操作确认")
+                    .setMessage("确定要删除选中的 ${adapter.selectedBills.size} 条账单吗？")
+                    .setPositiveButton("确定") { _, _ ->
+                        Prefs.deleteBills(this, adapter.selectedBills)
+                        adapter.isSelectionMode = false
+                        adapter.selectedBills.clear()
+                        btnEdit.text = "编辑"
+                        layoutBatch.visibility = View.GONE
+                        loadBills()
+                        Utils.toast(this, "已批量删除")
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+
+            btnBatchSync.setOnClickListener {
+                if (adapter.selectedBills.isEmpty()) {
+                    Utils.toast(this, "未选中任何账单")
+                    return@setOnClickListener
+                }
+                
+                AlertDialog.Builder(this)
+                    .setTitle("批量同步到钱迹")
+                    .setMessage("确定要同步选中的 ${adapter.selectedBills.size} 条账单吗？这可能会由于逐个启动记账流程而导致多次跳转。")
+                    .setPositiveButton("确定同步") { _, _ ->
+                        // 倒序同步，保证时间较早的先处理
+                        val selected = adapter.selectedBills.toList().sortedBy { it.time }
+                        selected.forEach { bill ->
+                            val qUrl = Utils.buildQianjiUrl(
+                                type = bill.type.toString(),
+                                money = bill.amount.toString(),
+                                time = bill.time,
+                                remark = bill.remarks,
+                                catename = bill.categoryName,
+                                accountname = bill.assetName,
+                                accountname2 = if (bill.type == 2 || bill.type == 3) bill.categoryName.replace("转账到 ", "").replace("还款到 ", "") else null
+                            )
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(qUrl)).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                        }
+                        
+                        adapter.isSelectionMode = false
+                        adapter.selectedBills.clear()
+                        btnEdit.text = "编辑"
+                        layoutBatch.visibility = View.GONE
+                        adapter.notifyDataSetChanged()
+                        Utils.toast(this, "同步任务已分发")
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
         }
     }
 
     inner class BillAdapter(private val items: List<Any>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        var isSelectionMode = false
+        val selectedBills = mutableSetOf<Bill>()
+        
         private val TYPE_DATE = 0
         private val TYPE_BILL = 1
 
@@ -343,14 +457,8 @@ class MainActivity : AppCompatActivity() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
             return if (viewType == TYPE_DATE) {
-                val v = TextView(parent.context).apply {
-                    layoutParams = ViewGroup.LayoutParams(-1, -2)
-                    setPadding(16, 32, 16, 16)
-                    setTextColor(android.graphics.Color.parseColor("#777777"))
-                    textSize = 14f
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                }
-                object : RecyclerView.ViewHolder(v) {}
+                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_bill_header, parent, false)
+                DateHeaderViewHolder(v)
             } else {
                 val v = LayoutInflater.from(parent.context).inflate(R.layout.item_bill, parent, false)
                 BillViewHolder(v)
@@ -359,23 +467,60 @@ class MainActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             if (getItemViewType(position) == TYPE_DATE) {
-                (holder.itemView as TextView).text = items[position] as String
+                val dateStr = items[position] as String
+                val h = holder as DateHeaderViewHolder
+                h.dateText.text = dateStr
+                
+                h.selectDayBtn.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
+                
+                // 找出这一天所有的账单
+                val billsInDay = mutableListOf<Bill>()
+                for (i in position + 1 until items.size) {
+                    val item = items[i]
+                    if (item is String) break
+                    if (item is Bill) billsInDay.add(item)
+                }
+
+                val isAllSelected = billsInDay.isNotEmpty() && selectedBills.containsAll(billsInDay)
+                h.selectDayBtn.text = if (isAllSelected) "取消全选" else "全选"
+                
+                h.selectDayBtn.setOnClickListener {
+                    if (isAllSelected) {
+                        selectedBills.removeAll(billsInDay)
+                    } else {
+                        selectedBills.addAll(billsInDay)
+                    }
+                    notifyDataSetChanged()
+                }
             } else {
                 val bill = items[position] as Bill
                 val h = holder as BillViewHolder
                 
+                // 处理选择模式下的复选框
+                h.checkBox.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
+                h.checkBox.setOnCheckedChangeListener(null)
+                h.checkBox.isChecked = selectedBills.contains(bill)
+                h.checkBox.setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) selectedBills.add(bill) else selectedBills.remove(bill)
+                }
+
                 // 处理转账/还款类型的显示名
                 if (bill.type == 2 || bill.type == 3) {
                     h.category.text = if (bill.type == 2) "转账" else "还款"
-                    val icon = if (bill.type == 2) " ➔ " else " ➔ "
+                    val icon = " ➔ "
                     h.detail.text = "${bill.assetName}$icon${bill.categoryName.replace("转账到 ", "").replace("还款到 ", "")}"
                 } else {
                     h.category.text = if (bill.categoryName.contains(" > ")) bill.categoryName.split(" > ").last() else bill.categoryName
                     h.detail.text = "${bill.assetName}${if(bill.remarks.isNotEmpty()) " | ${bill.remarks}" else ""}"
                 }
-
-                h.time.text = if(bill.time.length > 11) bill.time.substring(11) else ""
                 
+                // 根据当前排序模式显示不同的时间描述
+                if (currentSortByBillTime) {
+                    h.time.text = if(bill.time.length > 11) bill.time.substring(11) else ""
+                } else {
+                    h.time.text = if(bill.recordTime.length > 11) "记账: ${bill.recordTime.substring(11)}" else "来源: AI/Flip"
+                }
+
                 // 金额显示逻辑
                 val amountText = String.format("%.2f", bill.amount)
                 when(bill.type) {
@@ -394,8 +539,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 
                 // 加载图标
-                // 优先使用 bill 自身存储的 iconUrl (针对 AI 记账场景优化)
-                // 如果为空 (旧数据)，则通过 Helper 实时查找
                 val catIcon = if (bill.iconUrl.isNotEmpty()) {
                     bill.iconUrl
                 } else {
@@ -408,7 +551,7 @@ class MainActivity : AppCompatActivity() {
                     Glide.with(this@MainActivity)
                         .load(catIcon)
                         .transform(CircleCrop())
-                        .error(defaultResId) // 加载失败时显示默认图标
+                        .error(defaultResId)
                         .into(h.categoryIcon)
                 } else {
                     h.categoryIcon.setImageResource(defaultResId)
@@ -427,20 +570,25 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 h.itemView.setOnClickListener {
-                    editBill(bill)
+                    if (isSelectionMode) {
+                        h.checkBox.isChecked = !h.checkBox.isChecked
+                    } else {
+                        editBill(bill)
+                    }
                 }
 
-                // 长按删除
+                // 长按进入编辑模式
                 h.itemView.setOnLongClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("确认删除")
-                        .setMessage("确定要删除这条账单记录吗？")
-                        .setPositiveButton("删除") { _, _ ->
-                            Prefs.deleteBill(this@MainActivity, bill)
-                            loadBills() // 刷新列表
-                        }
-                        .setNegativeButton("取消", null)
-                        .show()
+                    if (isSelectionMode) return@setOnLongClickListener false
+                    
+                    isSelectionMode = true
+                    selectedBills.add(bill)
+                    
+                    // 同步更新外部 UI
+                    findViewById<MaterialButton>(R.id.btn_edit_bills).text = "取消"
+                    findViewById<View>(R.id.layout_batch_actions).visibility = View.VISIBLE
+                    
+                    notifyDataSetChanged()
                     true
                 }
             }
@@ -449,12 +597,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     class BillViewHolder(v: View) : RecyclerView.ViewHolder(v) {
+        val checkBox = v.findViewById<android.widget.CheckBox>(R.id.cb_bill_select)
         val categoryIcon = v.findViewById<ImageView>(R.id.iv_bill_category_icon)
         val assetIcon = v.findViewById<ImageView>(R.id.iv_bill_asset_icon)
         val category = v.findViewById<TextView>(R.id.tv_bill_category)
         val detail = v.findViewById<TextView>(R.id.tv_bill_detail)
         val time = v.findViewById<TextView>(R.id.tv_bill_time)
         val amount = v.findViewById<TextView>(R.id.tv_bill_amount)
+    }
+
+    class DateHeaderViewHolder(v: View) : RecyclerView.ViewHolder(v) {
+        val dateText = v.findViewById<TextView>(R.id.tv_header_date)
+        val selectDayBtn = v.findViewById<TextView>(R.id.btn_select_day)
     }
 
 

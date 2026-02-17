@@ -16,12 +16,11 @@
 
         <Spinner
             android:id="@+id/spinner_type"
-            android:layout_width="80dp"
+            android:layout_width="86dp"
             android:layout_height="32dp"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
-            android:background="@drawable/shape_tag_bg"
-            android:entries="@array/bill_types" />
+            android:background="@drawable/shape_tag_bg" />
 
         <EditText
             android:id="@+id/et_amount"

@@ -40,9 +40,32 @@ class AccountingFormController(
     val btnAiIcon: ImageView = rootView.findViewById(R.id.btn_ai_magic)
 
     init {
+        setupSpinner()
         setupListeners()
         setupDefaults()
         setupAnimations()
+    }
+
+    private fun setupSpinner() {
+        val types = ctx.resources.getStringArray(R.array.bill_types)
+        val adapter = object : ArrayAdapter<String>(ctx, android.R.layout.simple_spinner_item, types) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getView(position, convertView, parent) as TextView
+                v.gravity = android.view.Gravity.CENTER
+                v.setPadding(0, 0, 0, 0)
+                v.textSize = 13f
+                v.setTextColor(Color.parseColor("#666666"))
+                return v
+            }
+
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getDropDownView(position, convertView, parent) as TextView
+                v.gravity = android.view.Gravity.CENTER
+                v.setPadding(0, 30, 0, 30) // 增加下拉列表的垂直间距
+                return v
+            }
+        }
+        spType.adapter = adapter
     }
 
     private fun setupAnimations() {
@@ -174,7 +197,8 @@ class AccountingFormController(
             finalCategoryString,
             tvTime.text.toString(),
             etRemark.text.toString(),
-            resolvedIcon // 保存图标链接
+            resolvedIcon, // 保存图标链接
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()) // 记录当前记账时间
         )
         Prefs.addBill(ctx, bill)
 

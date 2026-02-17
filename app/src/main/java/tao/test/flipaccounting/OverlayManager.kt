@@ -45,6 +45,16 @@ class OverlayManager(private val ctx: Context) {
 
         setupLogic(overlayView!!, prefill)
         windowManager?.addView(overlayView, params)
+
+        // 添加点击外部自动关闭逻辑
+        overlayView?.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                removeOverlay()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     private fun setupLogic(view: View, prefill: JSONObject?) {

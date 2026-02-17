@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/page_ai_config"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- 标题栏 -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="24dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AI 配置"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="#333333"
+                android:layout_centerInParent="true"/>
+        </RelativeLayout>
+
+        <!-- 1. AI 提供商选择 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AI 提供商"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+        <Spinner
+            android:id="@+id/spinner_providers"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_search_box"
+            android:spinnerMode="dropdown"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- 2. API 接口地址 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="API 接口地址"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+        <EditText
+            android:id="@+id/et_api_url"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:hint="https://api.example.com"
+            android:background="@drawable/bg_search_box"
+            android:padding="12dp"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- 3. API 令牌 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="API 令牌 (API Key)"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+        <EditText
+            android:id="@+id/et_api_key"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:hint="输入您的 sk-..."
+            android:inputType="textPassword"
+            android:background="@drawable/bg_search_box"
+            android:padding="12dp"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- 4. 模型选择 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="选择 AI 模型"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+        <Spinner
+            android:id="@+id/spinner_models"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_search_box"
+            android:spinnerMode="dropdown"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- 5. 提示词定制 (Prompt) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="系统提示词 (System Prompt)"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+        <EditText
+            android:id="@+id/et_custom_prompt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minLines="6"
+            android:gravity="top"
+            android:hint="留空将使用系统默认提示词"
+            android:background="@drawable/bg_search_box"
+            android:padding="12dp"
+            android:textSize="13sp"
+            android:textColor="#555555"
+            android:layout_marginBottom="30dp"/>
+
+        <!-- 按钮组 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_reset_prompt"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="恢复默认提示词"
+            app:cornerRadius="12dp"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textColor="#757575"
+            app:strokeColor="#DDDDDD"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_test_conn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="测试连接并获取模型"
+            app:cornerRadius="12dp"
+            android:layout_marginBottom="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:backgroundTint="#5C6BC0"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_save_config"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="保存配置"
+            app:cornerRadius="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:backgroundTint="#4CAF50"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="注：部分提供商可能需要科学上网或特定的 API 地址。"
+            android:gravity="center"
+            android:layout_marginTop="16dp"
+            android:textColor="#999999"
+            android:textSize="11sp"/>
+
+        <View android:layout_width="match_parent" android:layout_height="40dp"/>
+    </LinearLayout>
+</ScrollView>

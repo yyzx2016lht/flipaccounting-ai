@@ -27,7 +27,8 @@ data class Bill(
     val categoryName: String,
     val time: String,
     val remarks: String = "",
-    val iconUrl: String = ""
+    val iconUrl: String = "",
+    val recordTime: String = "" // 实际记账记录生成的时间
 )
 
 /**
@@ -87,7 +88,7 @@ object Prefs {
     // --- 账单管理 ---
     fun addBill(ctx: Context, bill: Bill) {
         val list = getBills(ctx).toMutableList()
-        list.add(0, bill) // 新账单放在最前面
+        list.add(bill)
         val json = JSONArray()
         list.forEach {
             val obj = JSONObject()
@@ -98,6 +99,32 @@ object Prefs {
             obj.put("time", it.time)
             obj.put("remarks", it.remarks)
             obj.put("iconUrl", it.iconUrl)
+            obj.put("recordTime", it.recordTime)
+            json.put(obj)
+        }
+        prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
+    }
+
+    fun deleteBills(ctx: Context, billsToDelete: Collection<Bill>) {
+        val list = getBills(ctx).toMutableList()
+        val toDeleteHashes = billsToDelete.map { "${it.time}_${it.amount}_${it.categoryName}_${it.assetName}" }.toSet()
+        
+        list.removeAll { item ->
+            val hash = "${item.time}_${item.amount}_${item.categoryName}_${item.assetName}"
+            toDeleteHashes.contains(hash)
+        }
+        
+        val json = JSONArray()
+        list.forEach {
+            val obj = JSONObject()
+            obj.put("amount", it.amount)
+            obj.put("type", it.type)
+            obj.put("assetName", it.assetName)
+            obj.put("categoryName", it.categoryName)
+            obj.put("time", it.time)
+            obj.put("remarks", it.remarks)
+            obj.put("iconUrl", it.iconUrl)
+            obj.put("recordTime", it.recordTime)
             json.put(obj)
         }
         prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
@@ -125,6 +152,7 @@ object Prefs {
             obj.put("time", it.time)
             obj.put("remarks", it.remarks)
             obj.put("iconUrl", it.iconUrl)
+            obj.put("recordTime", it.recordTime)
             json.put(obj)
         }
         prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
@@ -144,7 +172,8 @@ object Prefs {
                     obj.getString("categoryName"),
                     obj.getString("time"),
                     obj.optString("remarks", ""),
-                    obj.optString("iconUrl", "")
+                    obj.optString("iconUrl", ""),
+                    obj.optString("recordTime", "")
                 ))
             }
         } catch (e: Exception) {
@@ -323,6 +352,14 @@ object Prefs {
         if (root.has(KEY_FLIP_ENABLED)) edit.putBoolean(KEY_FLIP_ENABLED, root.getBoolean(KEY_FLIP_ENABLED))
         if (root.has(KEY_BACK_TAP_ENABLED)) edit.putBoolean(KEY_BACK_TAP_ENABLED, root.getBoolean(KEY_BACK_TAP_ENABLED))
         if (root.has(KEY_HIDE_RECENTS)) edit.putBoolean(KEY_HIDE_RECENTS, root.getBoolean(KEY_HIDE_RECENTS))
+        
+        // 恢复账单记录
+        if (root.has("bills_v1")) {
+            edit.putString(KEY_BILLS, root.get("bills_v1").toString())
+        } else if (root.has(KEY_BILLS)) {
+            edit.putString(KEY_BILLS, root.get(KEY_BILLS).toString())
+        }
+
         edit.apply()
     }
 

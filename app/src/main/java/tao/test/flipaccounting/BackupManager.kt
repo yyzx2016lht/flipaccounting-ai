@@ -27,6 +27,23 @@ object BackupManager {
                 put("assets_v1", Prefs.serializeAssetList(Prefs.getAssets(context)))
                 put("cat_expense_v1", Prefs.serializeCategoryList(Prefs.getCategories(context, Prefs.TYPE_EXPENSE)))
                 put("cat_income_v1", Prefs.serializeCategoryList(Prefs.getCategories(context, Prefs.TYPE_INCOME)))
+                
+                // 导出账单历史
+                val billsArr = org.json.JSONArray()
+                Prefs.getBills(context).forEach { bill ->
+                    val obj = JSONObject()
+                    obj.put("amount", bill.amount)
+                    obj.put("type", bill.type)
+                    obj.put("assetName", bill.assetName)
+                    obj.put("categoryName", bill.categoryName)
+                    obj.put("time", bill.time)
+                    obj.put("remarks", bill.remarks)
+                    obj.put("iconUrl", bill.iconUrl)
+                    obj.put("recordTime", bill.recordTime)
+                    billsArr.put(obj)
+                }
+                put("bills_v1", billsArr)
+
                 val wl = org.json.JSONArray()
                 Prefs.getAppWhiteList(context).forEach { wl.put(it) }
                 put("app_white_list", wl)
