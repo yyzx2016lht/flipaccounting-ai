@@ -108,6 +108,15 @@ class OverlayService : Service() {
 
     // --- 核心逻辑：统一检查白名单 ---
     private fun checkAndShowOverlay() {
+        // 全局感应逻辑处理
+        if (Prefs.isFlipAlways(this)) {
+            triggerVibration()
+            Handler(Looper.getMainLooper()).post {
+                overlayManager.showOverlay()
+            }
+            return
+        }
+
         // 1. 获取白名单和当前前台应用
         // 注意：ShizukuShell.getForegroundApp() 可能有轻微耗时，但在传感器回调线程中执行是可以的
         val whiteList = Prefs.getAppWhiteList(this)

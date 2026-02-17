@@ -141,6 +141,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 全局感应开关
+        findViewById<SwitchMaterial>(R.id.switch_flip_always).apply {
+            isChecked = Prefs.isFlipAlways(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setFlipAlways(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启全局感应模式" else "已恢复受限感应模式")
+            }
+        }
+
 
         // 隐藏最近任务开关
         findViewById<SwitchMaterial>(R.id.switch_hide_recent).apply {

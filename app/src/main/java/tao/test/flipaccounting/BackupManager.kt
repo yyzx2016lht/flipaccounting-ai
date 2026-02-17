@@ -56,6 +56,7 @@ object BackupManager {
                 
                 // 6. 灵敏度/翻转设置
                 put("flip_enabled_v1", Prefs.isFlipEnabled(context))
+                put("flip_always_v1", Prefs.isFlipAlways(context))
                 put("flip_sensitivity_v1", Prefs.getFlipSensitivity(context))
                 put("flip_debounce_v1", Prefs.getFlipDuration(context))
                 put("use_custom_sensitivity_v1", Prefs.isUseCustomSensitivity(context))

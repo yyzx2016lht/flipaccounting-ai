@@ -39,6 +39,7 @@ object Prefs {
 
     // --- Key 定义 ---
     private const val KEY_FLIP_ENABLED = "flip_enabled"
+    private const val KEY_FLIP_ALWAYS = "flip_always_on" // [新增] 忽略白名单始终开启
     private const val KEY_BACK_TAP_ENABLED = "back_tap_enabled" // [新增]
     private const val KEY_WHITE_LIST = "app_white_list"
     private const val KEY_ASSETS = "assets_v1"
@@ -72,6 +73,9 @@ object Prefs {
     // --- 基础配置 ---
     fun isFlipEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FLIP_ENABLED, false)
     fun setFlipEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_FLIP_ENABLED, enabled).apply()
+
+    fun isFlipAlways(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FLIP_ALWAYS, false)
+    fun setFlipAlways(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_FLIP_ALWAYS, enabled).apply()
 
     fun isBackTapEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_BACK_TAP_ENABLED, false)
     fun setBackTapEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_BACK_TAP_ENABLED, enabled).apply()
@@ -427,6 +431,7 @@ object Prefs {
 
         // 6. 翻转设置 / 灵敏度
         if (root.has("flip_enabled_v1")) edit.putBoolean(KEY_FLIP_ENABLED, root.getBoolean("flip_enabled_v1"))
+        if (root.has("flip_always_v1")) edit.putBoolean(KEY_FLIP_ALWAYS, root.getBoolean("flip_always_v1"))
         if (root.has("flip_sensitivity_v1")) edit.putInt(KEY_FLIP_SENSITIVITY, root.getInt("flip_sensitivity_v1"))
         if (root.has("flip_debounce_v1")) edit.putLong(KEY_FLIP_DURATION, root.getLong("flip_debounce_v1"))
         if (root.has("use_custom_sensitivity_v1")) edit.putBoolean(KEY_USE_CUSTOM_SENSITIVITY, root.getBoolean("use_custom_sensitivity_v1"))
