@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root_floating_view"
     android:layout_width="320dp"
     android:layout_height="wrap_content"
@@ -32,7 +33,7 @@
             android:hint="0.00"
             android:inputType="numberDecimal"
             android:textColor="#2E7D32"
-            android:textSize="32sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
     </RelativeLayout>
 
@@ -141,39 +142,61 @@
         android:padding="8dp"
         android:textSize="14sp" />
 
+
     <LinearLayout
-        android:id="@+id/layout_ai_entry"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:layout_gravity="end"
-        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:clickable="true"
-        android:focusable="true"
-        android:background="?android:attr/selectableItemBackground"
-        android:padding="4dp">
-        <ImageView
-            android:id="@+id/btn_ai_voice"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginEnd="8dp"
-            android:src="@android:drawable/ic_btn_speak_now"
-            android:contentDescription="语音输入" />
-        <TextView
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical">
+
+        <Spinner
+            android:id="@+id/spinner_currency"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/shape_tag_bg"
+            android:paddingStart="8dp"
+            android:paddingEnd="24dp"
+            android:spinnerMode="dropdown"
+            tools:listitem="@android:layout/simple_spinner_dropdown_item" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/layout_ai_entry"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="智能识别"
-            android:textColor="#673AB7"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground"
+            android:padding="4dp">
+            <ImageView
+                android:id="@+id/btn_ai_voice"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginEnd="8dp"
+                android:src="@android:drawable/ic_btn_speak_now"
+                android:contentDescription="语音输入" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="智能识别"
+                android:textColor="#673AB7"
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
-        <ImageView
-            android:id="@+id/btn_ai_magic"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="6dp"
-            android:src="@drawable/ic_ai_robot" />
+            <ImageView
+                android:id="@+id/btn_ai_magic"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="6dp"
+                android:src="@drawable/ic_ai_robot" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout

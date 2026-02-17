@@ -60,8 +60,12 @@
         <activity android:name=".AddAssetActivity" android:label="新增资产" />
 
         <activity android:name=".SettingsActivity" android:label="分类管理" />
+        <activity android:name=".BackupActivity" android:label="备份与恢复" />
         <activity android:name=".AddCategoryActivity" android:label="新增分类" />
         <activity android:name=".LogViewerActivity" android:label="日志查看器" />
+        <activity android:name=".ui.CurrencyManagerActivity" android:label="货币管理" />
+        <activity android:name=".ui.ExchangeRateActivity" android:label="汇率管理" />
+        <activity android:name=".ui.FlipSensitivityActivity" android:label="灵敏度调节" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

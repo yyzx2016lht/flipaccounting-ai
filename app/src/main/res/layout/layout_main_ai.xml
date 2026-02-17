@@ -102,7 +102,16 @@
             android:background="@drawable/bg_search_box"
             android:spinnerMode="dropdown"
             android:layout_marginBottom="24dp"/>
-
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_test_conn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="测试连接并获取模型"
+            app:cornerRadius="12dp"
+            android:layout_marginBottom="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:backgroundTint="#5C6BC0"/>
         <!-- 5. 提示词定制 (Prompt) -->
         <TextView
             android:layout_width="wrap_content"
@@ -139,16 +148,7 @@
             android:textColor="#757575"
             app:strokeColor="#DDDDDD"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_test_conn"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="测试连接并获取模型"
-            app:cornerRadius="12dp"
-            android:layout_marginBottom="12dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:backgroundTint="#5C6BC0"/>
+
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_save_config"
