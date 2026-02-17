@@ -24,16 +24,29 @@ class VoiceInputHandler(
     
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var isRecording = false
+    private var isWannaCancel = false // [新增] 是否进入取消状态
 
     fun setupVoiceButton(btnVoice: View) {
         btnVoice.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    // 检查麦克风权限
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            Utils.toast(ctx, "使用语音功能需要麦克风权限")
+                            // 注意：在悬浮窗中申请 Activity 权限比较复杂，
+                            // 通常引导用户回主界面，或者在 OverlayService 启动时预判，
+                            // 这里我们简单提示。
+                            return@setOnTouchListener true
+                        }
+                    }
+
                     // 1. 立即缩放动画，即使是短按也有反馈
                     v.animate().scaleX(1.3f).scaleY(1.3f).setDuration(100).start()
                     
                     // 2. 延迟判断长按
                     isRecording = false
+                    isWannaCancel = false
                     handler.postDelayed({
                         isRecording = true
                         // 触发震动反馈：长按确认进入录音
@@ -53,6 +66,26 @@ class VoiceInputHandler(
                     }, 200) // 200ms 作为触发阈值
                     true
                 }
+                MotionEvent.ACTION_MOVE -> { // [新增] 上滑取消逻辑
+                    if (isRecording) {
+                        // 如果手指上滑超过阈值（例如 150 像素），标记为取消
+                        // 因为 btnVoice 可能布局在底部，负值 y 代表手指移出了 View 上边缘
+                        if (event.y < -150f) {
+                            if (!isWannaCancel) {
+                                isWannaCancel = true
+                                Utils.vibrate(ctx, 30) // 触感反馈：进入取消区
+                                aiAssistant.showInputPanel(mode = AiAssistant.MODE_CANCEL) { onResult(it) }
+                            }
+                        } else {
+                            if (isWannaCancel) {
+                                isWannaCancel = false
+                                Utils.vibrate(ctx, 10) // 触感反馈：回到录音区
+                                aiAssistant.showInputPanel(mode = AiAssistant.MODE_RECORDING) { onResult(it) }
+                            }
+                        }
+                    }
+                    true
+                }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
                     
@@ -61,23 +94,29 @@ class VoiceInputHandler(
 
                     if (isRecording) {
                         isRecording = false
-                        stopRecording { file ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                // 4. 调用 API 转文字
-                                val text = AIService.speechToText(ctx, file)
+                        if (isWannaCancel) { // [新增]
+                            stopRecording { /* discard */ }
+                            aiAssistant.dismiss()
+                            Utils.toast(ctx, "已取消录音")
+                        } else {
+                            stopRecording { file ->
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    // 4. 调用 API 转文字
+                                    val text = AIService.speechToText(ctx, file)
 
-                                withContext(Dispatchers.Main) {
-                                    if (!text.isNullOrEmpty()) {
-                                        // 5. 成功：显示结果
-                                        aiAssistant.showInputPanel(
-                                            defaultText = text,
-                                            mode = AiAssistant.MODE_LOADING
-                                        ) { resultJson ->
-                                            onResult(resultJson)
+                                    withContext(Dispatchers.Main) {
+                                        if (!text.isNullOrEmpty()) {
+                                            // 5. 成功：显示结果
+                                            aiAssistant.showInputPanel(
+                                                defaultText = text,
+                                                mode = AiAssistant.MODE_LOADING
+                                            ) { resultJson ->
+                                                onResult(resultJson)
+                                            }
+                                        } else {
+                                            aiAssistant.dismiss()
+                                            Utils.toast(ctx, "未检测到语音")
                                         }
-                                    } else {
-                                        aiAssistant.dismiss()
-                                        Utils.toast(ctx, "未检测到语音")
                                     }
                                 }
                             }

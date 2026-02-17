@@ -28,6 +28,7 @@ class AiAssistant(private val ctx: Context) {
         const val MODE_INPUT = 0      // 纯文本输入模式
         const val MODE_RECORDING = 1  // 录音中模式
         const val MODE_LOADING = 2    // 识别/分析中模式
+        const val MODE_CANCEL = 3     // [新增] 松开取消模式
     }
 
     /**
@@ -134,7 +135,18 @@ class AiAssistant(private val ctx: Context) {
                 layoutLoading.visibility = View.VISIBLE
                 layoutResult.visibility = View.GONE
                 tvThinkingLog?.text = "正在倾听..."
+                tvThinkingLog?.setTextColor(android.graphics.Color.parseColor("#7B61FF"))
                 tvRecordedTextPreview?.visibility = View.GONE // 录音时不显示预览
+                dialog.setCancelable(false)
+                btnClose.visibility = View.GONE
+            }
+            MODE_CANCEL -> { // [新增]
+                layoutInput.visibility = View.GONE
+                layoutLoading.visibility = View.VISIBLE
+                layoutResult.visibility = View.GONE
+                tvThinkingLog?.text = "松开即可取消"
+                tvThinkingLog?.setTextColor(android.graphics.Color.RED)
+                tvRecordedTextPreview?.visibility = View.GONE
                 dialog.setCancelable(false)
                 btnClose.visibility = View.GONE
             }
@@ -142,8 +154,7 @@ class AiAssistant(private val ctx: Context) {
                 layoutInput.visibility = View.GONE
                 layoutLoading.visibility = View.VISIBLE
                 layoutResult.visibility = View.GONE
-
-                // 显示“您说的是：xxx”
+                tvThinkingLog?.setTextColor(android.graphics.Color.parseColor("#7B61FF"))
                 if (!text.isNullOrEmpty() && text != "正在分析语义...") {
                     tvThinkingLog?.text = "正在分析..."
                     tvRecordedTextPreview?.visibility = View.VISIBLE

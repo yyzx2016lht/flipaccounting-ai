@@ -52,6 +52,17 @@ object Prefs {
     private const val KEY_AI_URL = "ai_api_url"
     private const val KEY_AI_PROMPT = "ai_system_prompt"
     private const val KEY_BILLS = "bills_list"
+    private const val KEY_FLIP_SENSITIVITY = "flip_sensitivity_level" // 0-100 progress
+    private const val KEY_FLIP_DURATION = "flip_duration_threshold" // Long
+    private const val KEY_USE_CUSTOM_SENSITIVITY = "use_custom_sensitivity"
+    private const val KEY_CUSTOM_G_THRESHOLD = "custom_g_threshold"
+    private const val KEY_CUSTOM_MAX_DURATION = "custom_max_duration"
+    private const val KEY_ACTIVE_CURRENCIES = "active_currencies_v1"
+    private const val KEY_EXCHANGE_REFRESH_INTERVAL = "exchange_refresh_interval_v1"
+
+    private const val KEY_SHOW_AI_TEXT = "show_ai_text"
+    private const val KEY_SHOW_AI_VOICE = "show_ai_voice"
+    private const val KEY_SHOW_MULTI_CURRENCY = "show_multi_currency"
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -61,6 +72,9 @@ object Prefs {
     // --- 基础配置 ---
     fun isFlipEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FLIP_ENABLED, false)
     fun setFlipEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_FLIP_ENABLED, enabled).apply()
+
+    fun isBackTapEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_BACK_TAP_ENABLED, false)
+    fun setBackTapEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_BACK_TAP_ENABLED, enabled).apply()
 
 
     fun isHideRecents(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_HIDE_RECENTS, false)
@@ -184,7 +198,24 @@ object Prefs {
 
     // --- 应用白名单管理 ---
     fun getAppWhiteList(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_WHITE_LIST, emptySet()) ?: emptySet()
-    fun saveAppWhiteList(ctx: Context, list: Set<String>) = prefs(ctx).edit().putStringSet(KEY_WHITE_LIST, list).apply()
+    fun setAppWhiteList(ctx: Context, list: Set<String>) = prefs(ctx).edit().putStringSet(KEY_WHITE_LIST, list).apply()
+
+    // --- 货币与汇率管理 ---
+    fun getActiveCurrencies(ctx: Context): Set<String> = prefs(ctx).getStringSet(KEY_ACTIVE_CURRENCIES, setOf("CNY")) ?: setOf("CNY")
+    fun setActiveCurrencies(ctx: Context, currencies: Set<String>) = prefs(ctx).edit().putStringSet(KEY_ACTIVE_CURRENCIES, currencies).apply()
+
+    fun getExchangeRefreshInterval(ctx: Context): Long = prefs(ctx).getLong(KEY_EXCHANGE_REFRESH_INTERVAL, 12 * 3600 * 1000L) // 默认12小时
+    fun setExchangeRefreshInterval(ctx: Context, interval: Long) = prefs(ctx).edit().putLong(KEY_EXCHANGE_REFRESH_INTERVAL, interval).apply()
+
+    // --- 显示控制 ---
+    fun isShowAiText(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SHOW_AI_TEXT, false)
+    fun setShowAiText(ctx: Context, show: Boolean) = prefs(ctx).edit().putBoolean(KEY_SHOW_AI_TEXT, show).apply()
+
+    fun isShowAiVoice(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SHOW_AI_VOICE, false)
+    fun setShowAiVoice(ctx: Context, show: Boolean) = prefs(ctx).edit().putBoolean(KEY_SHOW_AI_VOICE, show).apply()
+
+    fun isShowMultiCurrency(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SHOW_MULTI_CURRENCY, false)
+    fun setShowMultiCurrency(ctx: Context, show: Boolean) = prefs(ctx).edit().putBoolean(KEY_SHOW_MULTI_CURRENCY, show).apply()
 
     // --- 资产管理 ---
     fun getAssets(ctx: Context): List<Asset> {
@@ -338,27 +369,84 @@ object Prefs {
         return array
     }
 
-    fun importRawData(ctx: Context, root: JSONObject) {
+    fun importAll(ctx: Context, root: JSONObject) {
         val edit = prefs(ctx).edit()
-        if (root.has(KEY_ASSETS)) edit.putString(KEY_ASSETS, root.get(KEY_ASSETS).toString())
-        if (root.has(KEY_CAT_EXPENSE)) edit.putString(KEY_CAT_EXPENSE, root.get(KEY_CAT_EXPENSE).toString())
-        if (root.has(KEY_CAT_INCOME)) edit.putString(KEY_CAT_INCOME, root.get(KEY_CAT_INCOME).toString())
-        if (root.has(KEY_WHITE_LIST)) {
-            val set = mutableSetOf<String>()
-            val arr = root.getJSONArray(KEY_WHITE_LIST)
-            for (i in 0 until arr.length()) set.add(arr.getString(i))
-            edit.putStringSet(KEY_WHITE_LIST, set)
+
+        // 1. 资产
+        if (root.has("assets_v1")) {
+            edit.putString(KEY_ASSETS, root.get("assets_v1").toString())
         }
-        if (root.has(KEY_FLIP_ENABLED)) edit.putBoolean(KEY_FLIP_ENABLED, root.getBoolean(KEY_FLIP_ENABLED))
-        if (root.has(KEY_BACK_TAP_ENABLED)) edit.putBoolean(KEY_BACK_TAP_ENABLED, root.getBoolean(KEY_BACK_TAP_ENABLED))
-        if (root.has(KEY_HIDE_RECENTS)) edit.putBoolean(KEY_HIDE_RECENTS, root.getBoolean(KEY_HIDE_RECENTS))
-        
-        // 恢复账单记录
-        if (root.has("bills_v1")) {
-            edit.putString(KEY_BILLS, root.get("bills_v1").toString())
-        } else if (root.has(KEY_BILLS)) {
-            edit.putString(KEY_BILLS, root.get(KEY_BILLS).toString())
+
+        // 2. 分类
+        if (root.has("cat_expense_v1")) {
+            edit.putString(KEY_CAT_EXPENSE, root.get("cat_expense_v1").toString())
         }
+        if (root.has("cat_income_v1")) {
+            edit.putString(KEY_CAT_INCOME, root.get("cat_income_v1").toString())
+        }
+
+        // 3. 账单 (支持 bills_v1 和旧版 bills_list)
+        val billsJson = when {
+            root.has("bills_v1") -> root.get("bills_v1").toString()
+            root.has(KEY_BILLS) -> root.get(KEY_BILLS).toString()
+            else -> null
+        }
+        if (billsJson != null) edit.putString(KEY_BILLS, billsJson)
+
+        // 4. 白名单
+        if (root.has("app_white_list_v1")) {
+            try {
+                val arr = JSONArray(root.getString("app_white_list_v1"))
+                val set = mutableSetOf<String>()
+                for (i in 0 until arr.length()) set.add(arr.getString(i))
+                edit.putStringSet(KEY_WHITE_LIST, set)
+            } catch (e: Exception) {}
+        } else if (root.has(KEY_WHITE_LIST)) {
+            // 兼容旧版可能是直接的 JSONArray 字符串
+            try {
+                val obj = root.get(KEY_WHITE_LIST)
+                if (obj is JSONArray) {
+                    val set = mutableSetOf<String>()
+                    for (i in 0 until obj.length()) set.add(obj.getString(i))
+                    edit.putStringSet(KEY_WHITE_LIST, set)
+                }
+            } catch (e: Exception) {}
+        }
+
+        // 5. 多币种
+        if (root.has("active_currencies_v1")) {
+            val raw = root.getString("active_currencies_v1")
+            val currencies = raw.split(",").filter { it.isNotBlank() }.toSet()
+            if (currencies.isNotEmpty()) {
+                edit.putStringSet(KEY_ACTIVE_CURRENCIES, currencies)
+            }
+        }
+        if (root.has("exchange_refresh_interval_v1")) {
+            edit.putLong(KEY_EXCHANGE_REFRESH_INTERVAL, root.getLong("exchange_refresh_interval_v1"))
+        }
+
+        // 6. 翻转设置 / 灵敏度
+        if (root.has("flip_enabled_v1")) edit.putBoolean(KEY_FLIP_ENABLED, root.getBoolean("flip_enabled_v1"))
+        if (root.has("flip_sensitivity_v1")) edit.putInt(KEY_FLIP_SENSITIVITY, root.getInt("flip_sensitivity_v1"))
+        if (root.has("flip_debounce_v1")) edit.putLong(KEY_FLIP_DURATION, root.getLong("flip_debounce_v1"))
+        if (root.has("use_custom_sensitivity_v1")) edit.putBoolean(KEY_USE_CUSTOM_SENSITIVITY, root.getBoolean("use_custom_sensitivity_v1"))
+        if (root.has("custom_g_threshold_v1")) edit.putFloat(KEY_CUSTOM_G_THRESHOLD, root.getDouble("custom_g_threshold_v1").toFloat())
+        if (root.has("custom_max_duration_v1")) edit.putLong(KEY_CUSTOM_MAX_DURATION, root.getLong("custom_max_duration_v1"))
+
+        // 7. 其他偏好
+        if (root.has("hide_recents_v1")) edit.putBoolean(KEY_HIDE_RECENTS, root.getBoolean("hide_recents_v1"))
+        if (root.has("back_tap_enabled_v1")) edit.putBoolean(KEY_BACK_TAP_ENABLED, root.getBoolean("back_tap_enabled_v1"))
+
+        // 8. 显示控制恢复
+        if (root.has("show_ai_text_v1")) edit.putBoolean(KEY_SHOW_AI_TEXT, root.getBoolean("show_ai_text_v1"))
+        if (root.has("show_ai_voice_v1")) edit.putBoolean(KEY_SHOW_AI_VOICE, root.getBoolean("show_ai_voice_v1"))
+        if (root.has("show_multi_cur_v1")) edit.putBoolean(KEY_SHOW_MULTI_CURRENCY, root.getBoolean("show_multi_cur_v1"))
+
+        // 9. AI 配置恢复
+        if (root.has("ai_api_key_v1")) edit.putString(KEY_AI_KEY, root.getString("ai_api_key_v1"))
+        if (root.has("ai_api_url_v1")) edit.putString(KEY_AI_URL, root.getString("ai_api_url_v1"))
+        if (root.has("ai_model_id_v1")) edit.putString(KEY_AI_MODEL, root.getString("ai_model_id_v1"))
+        if (root.has("ai_system_prompt_v1")) edit.putString(KEY_AI_PROMPT, root.getString("ai_system_prompt_v1"))
 
         edit.apply()
     }
@@ -381,4 +469,41 @@ object Prefs {
         CategoryNode("理财", "https://res3.qianjiapp.com/cateic_licai.png"),
         CategoryNode("礼金", "https://res3.qianjiapp.com/cateic_lijin.png")
     )
+
+    // --- 翻转灵敏度 ---
+    // 保存的是 Seekbar 的进度 0-100， 默认 50
+    fun getFlipSensitivity(ctx: Context): Int = prefs(ctx).getInt(KEY_FLIP_SENSITIVITY, 50)
+    fun setFlipSensitivity(ctx: Context, level: Int) = prefs(ctx).edit().putInt(KEY_FLIP_SENSITIVITY, level).apply()
+
+    // 翻转时长阈值，默认 400ms
+    fun getFlipDuration(ctx: Context): Long = prefs(ctx).getLong(KEY_FLIP_DURATION, 400L)
+    fun setFlipDuration(ctx: Context, duration: Long) = prefs(ctx).edit().putLong(KEY_FLIP_DURATION, duration).apply()
+    
+    // --- 自定义灵敏度参数 ---
+    fun isUseCustomSensitivity(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_USE_CUSTOM_SENSITIVITY, false)
+    fun setUseCustomSensitivity(ctx: Context, use: Boolean) = prefs(ctx).edit().putBoolean(KEY_USE_CUSTOM_SENSITIVITY, use).apply()
+
+    fun getCustomGThreshold(ctx: Context): Float = prefs(ctx).getFloat(KEY_CUSTOM_G_THRESHOLD, 7.25f)
+    fun setCustomGThreshold(ctx: Context, g: Float) = prefs(ctx).edit().putFloat(KEY_CUSTOM_G_THRESHOLD, g).apply()
+
+    fun getCustomMaxDuration(ctx: Context): Long = prefs(ctx).getLong(KEY_CUSTOM_MAX_DURATION, 550L)
+    fun setCustomMaxDuration(ctx: Context, duration: Long) = prefs(ctx).edit().putLong(KEY_CUSTOM_MAX_DURATION, duration).apply()
+
+    // --- 白名单序列化辅助 ---
+    fun serializeWhiteList(set: Set<String>): String {
+       return JSONArray(set).toString()
+    }
+
+    fun importWhiteList(ctx: Context, jsonStr: String) {
+        try {
+            val arr = JSONArray(jsonStr)
+            val list = mutableListOf<String>()
+            for(i in 0 until arr.length()) {
+                list.add(arr.getString(i))
+            }
+            setAppWhiteList(ctx, list.toSet())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

@@ -55,6 +55,7 @@ object AIService {
 1. 可用资产库: {{ASSETS}}
 2. 支出分类库: {{EXPENSE_CATS}}
 3. 收入分类库: {{INCOME_CATS}}
+4. 可用币种库: {{CURRENCIES}}
 
 【Type (记账类型) 定义】
 - 0: 支出 (默认消费)
@@ -71,16 +72,23 @@ object AIService {
    - `to_asset_name`: 
         - 仅用于转账/还款：**转入方/还款对象** (如"还花呗"，则为"花呗")。
    - **约束：如果未提及资产，必须返回 "" (空字符串)。**
-3. **Time (时间)**: 基于基准时间推算，格式 yyyy-MM-dd HH:mm:ss。
+3. **Currency (币种)**: 
+   - 从【可用币种库】中选择返回代码。
+   - 如果用户提到特定币种(如"美元"、"刀"、"$"则选"USD"；"日元"则选"JPY")。
+   - **如果未提及任何信息，必须默认返回 "CNY"。**
+4. **Time (时间)**: 基于基准时间推算，格式 yyyy-MM-dd HH:mm:ss。
 
 【JSON 输出格式】
-{"amount":0.0, "type":0, "asset_name":"", "to_asset_name":"", "category_name":"", "time":"", "remarks":""}
+{"amount":0.0, "type":0, "asset_name":"", "to_asset_name":"", "category_name":"", "time":"", "remarks":"", "currency":"CNY"}
 
 【格式演示 (Format Demo)】
 警告：以下示例中的分类和资产仅供参考格式，实际请根据用户输入从上方列表中选择。
 
 输入: "刚才用{{DEMO_ASSET}} 买东西花了100"
-输出: {"amount":100.0, "type":0, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"买东西"}
+输出: {"amount":100.0, "type":0, "asset_name":"{{DEMO_ASSET}}", "category_name":"{{DEMO_EXPENSE_CAT}}", "time":"...", "remarks":"买东西", "currency":"CNY"}
+
+输入: "昨天在超市付了 50 刀"
+输出: {"amount":50.0, "type":0, "asset_name":"", "category_name":"购物", "time":"...", "remarks":"超市消费", "currency":"USD"}
 
 输入: "招商银行还抖音月付90.98"
 输出: {"amount":90.98, "type":3, "asset_name":"招商银行", "to_asset_name":"抖音月付", "category_name":"", "time":"...", "remarks":"还款"}
@@ -143,6 +151,7 @@ object AIService {
 
         // 1. 准备数据
         val assets = Prefs.getAssets(ctx).map { it.name }
+        val currencies = Prefs.getActiveCurrencies(ctx).toList()
         // 为了提高 token 利用率，我们将分类拍扁，但保留层级结构字符串
         val expenseCats = Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).flatMap { parent ->
             if (parent.subs.isEmpty()) listOf(parent.name)
@@ -171,6 +180,7 @@ object AIService {
             .replace("{{ASSETS}}", Gson().toJson(assets))
             .replace("{{EXPENSE_CATS}}", Gson().toJson(expenseCats))
             .replace("{{INCOME_CATS}}", Gson().toJson(incomeCats))
+            .replace("{{CURRENCIES}}", Gson().toJson(currencies))
             .replace("{{DEMO_ASSET}}", demoAsset)
             .replace("{{DEMO_EXPENSE_CAT}}", demoExpenseCat)
             .replace("{{DEMO_INCOME_CAT}}", demoIncomeCat)

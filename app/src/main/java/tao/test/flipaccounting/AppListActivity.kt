@@ -96,7 +96,7 @@ class AppListActivity : AppCompatActivity() {
 
         // 6. 保存逻辑
         findViewById<MaterialButton>(R.id.btn_save).setOnClickListener {
-            Prefs.saveAppWhiteList(this, selectedPackageNames)
+            Prefs.setAppWhiteList(this, selectedPackageNames)
             Utils.toast(this, "白名单已保存 (${selectedPackageNames.size}个应用)")
             finish()
         }

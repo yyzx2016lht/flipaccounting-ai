@@ -35,6 +35,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CircleCrop
 import org.json.JSONObject
 import tao.test.flipaccounting.logic.AccountingFormController
+import tao.test.flipaccounting.ui.FlipSensitivityActivity
 
 class MainActivity : AppCompatActivity() {
 
@@ -151,6 +152,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // AI 文本识别开关
+        findViewById<SwitchMaterial>(R.id.switch_show_ai).apply {
+            isChecked = Prefs.isShowAiText(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setShowAiText(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启 AI 文本识别入口" else "已隐藏 AI 文本识别入口")
+            }
+        }
+
+        // 麦克风开关
+        findViewById<SwitchMaterial>(R.id.switch_show_voice).apply {
+            isChecked = Prefs.isShowAiVoice(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setShowAiVoice(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启语音记账入口" else "已隐藏语音记账入口及权限申请")
+            }
+        }
+
+        // 多币种开关
+        findViewById<SwitchMaterial>(R.id.switch_show_multi_cur).apply {
+            isChecked = Prefs.isShowMultiCurrency(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setShowMultiCurrency(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启多币种显示" else "已按单币种显示")
+            }
+        }
+
         // --- 3. 数据管理跳转 ---
         findViewById<View>(R.id.btn_manage_assets).setOnClickListener {
             startActivity(Intent(this, AssetActivity::class.java))
@@ -161,21 +189,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.btn_manage_currencies).setOnClickListener {
-            Utils.toast(this, "货币管理功能开发中...")
+            startActivity(Intent(this, tao.test.flipaccounting.ui.CurrencyManagerActivity::class.java))
         }
 
         findViewById<View>(R.id.btn_backup_restore).setOnClickListener {
-            val options = arrayOf("📤 导出备份文件 (.json)", "📥 选择备份文件恢复")
-            AlertDialog.Builder(this)
-                .setTitle("数据备份")
-                .setItems(options) { _, which ->
-                    if (which == 0) {
-                        BackupManager.startExport(this)
-                    } else {
-                        BackupManager.startImport(this)
-                    }
-                }
-                .show()
+            startActivity(Intent(this, BackupActivity::class.java))
         }
 
         findViewById<View>(R.id.btn_manage_whitelist).setOnClickListener {
@@ -188,6 +206,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startActivity(Intent(this, AppListActivity::class.java))
             }
+        }
+
+        findViewById<View>(R.id.btn_flip_sensitivity).setOnClickListener {
+            startActivity(Intent(this, FlipSensitivityActivity::class.java))
         }
     }
 
@@ -736,24 +758,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK || data == null) return
-
-        val uri = data.data ?: return
-        when (requestCode) {
-            BackupManager.REQUEST_CODE_EXPORT -> {
-                BackupManager.handleExportResult(this, uri)
-            }
-            BackupManager.REQUEST_CODE_IMPORT -> {
-                AlertDialog.Builder(this)
-                    .setTitle("确认恢复")
-                    .setMessage("恢复将覆盖当前所有资产、分类及白名单数据，是否继续？")
-                    .setPositiveButton("确定") { _, _ ->
-                        BackupManager.handleImportResult(this, uri)
-                    }
-                    .setNegativeButton("取消", null)
-                    .show()
-            }
-        }
     }
 
     private fun setExcludeFromRecents(exclude: Boolean) {
@@ -768,9 +772,7 @@ class MainActivity : AppCompatActivity() {
     private fun checkAndRequestPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val needed = mutableListOf<String>()
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                needed.add(Manifest.permission.RECORD_AUDIO)
-            }
+            // 移除了 RECORD_AUDIO，改为在使用时再申请
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     needed.add(Manifest.permission.POST_NOTIFICATIONS)

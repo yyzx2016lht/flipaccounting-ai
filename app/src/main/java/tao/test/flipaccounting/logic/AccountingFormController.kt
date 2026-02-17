@@ -16,6 +16,8 @@ import tao.test.flipaccounting.ui.dialog.OverlayDialogs
 import java.text.SimpleDateFormat
 import java.util.*
 
+import tao.test.flipaccounting.CurrencyData
+
 class AccountingFormController(
     private val ctx: Context,
     private val rootView: View,
@@ -38,12 +40,30 @@ class AccountingFormController(
     val btnVoice: ImageView = rootView.findViewById(R.id.btn_ai_voice)
     val layoutAiEntry: LinearLayout = rootView.findViewById(R.id.layout_ai_entry)
     val btnAiIcon: ImageView = rootView.findViewById(R.id.btn_ai_magic)
+    private val spCurrency: Spinner = rootView.findViewById(R.id.spinner_currency)
 
     init {
+        CurrencyManager.init(ctx)
+        setupVisibility()
         setupSpinner()
+        setupCurrencySpinner()
         setupListeners()
         setupDefaults()
         setupAnimations()
+    }
+
+    private fun setupVisibility() {
+        // [新增] 根据偏好设置显示/隐藏组件
+        val showAiText = Prefs.isShowAiText(ctx)
+        val showAiVoice = Prefs.isShowAiVoice(ctx)
+        val showMultiCur = Prefs.isShowMultiCurrency(ctx)
+
+        layoutAiEntry.visibility = if (showAiText) View.VISIBLE else View.GONE
+        btnVoice.visibility = if (showAiVoice) View.VISIBLE else View.GONE
+        spCurrency.visibility = if (showMultiCur) View.VISIBLE else View.GONE
+        
+        // 如果 AI 文本和语音都隐藏了，通常意味着用户不想用 AI，
+        // 我们可以在布局上做进一步调整（如隐藏分隔线等，这里简单处理）
     }
 
     private fun setupSpinner() {
@@ -66,6 +86,47 @@ class AccountingFormController(
             }
         }
         spType.adapter = adapter
+    }
+
+    private fun setupCurrencySpinner() {
+        val enabledCodes = CurrencyManager.getEnabledCurrencies(ctx)
+        
+        // Map codes to display names with emoji
+        val displayList = enabledCodes.map { code ->
+            val info = CurrencyData.getInfo(code)
+            info?.getDisplayName() ?: code
+        }
+
+        val adapter = object : ArrayAdapter<String>(ctx, android.R.layout.simple_spinner_item, displayList) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getView(position, convertView, parent) as TextView
+                
+                // MAIN CHANGE: For the collapsed view, show only flag and code
+                val code = enabledCodes[position]
+                val info = CurrencyData.getInfo(code)
+                v.text = info?.getShortName() ?: code
+                
+                v.gravity = android.view.Gravity.CENTER
+                v.setTextColor(Color.parseColor("#333333"))
+                v.textSize = 14f 
+                return v
+            }
+
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getDropDownView(position, convertView, parent) as TextView
+                // Keep full display name in dropdown for clarity
+                v.setPadding(30, 20, 30, 20)
+                return v
+            }
+        }
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spCurrency.adapter = adapter
+        
+        // Default to CNY
+        val defaultIndex = enabledCodes.indexOf("CNY")
+        if (defaultIndex >= 0) {
+            spCurrency.setSelection(defaultIndex)
+        }
     }
 
     private fun setupAnimations() {
@@ -129,7 +190,7 @@ class AccountingFormController(
                         if (tvAccount.text.toString().contains("选择") || tvAccount.text.toString().contains("转出")) {
                             tvAccount.text = "选择资产"
                         }
-                        etMoney.hint = "0.00"
+                        etMoney.hint = if (pos == 1) "收入金额" else "支出金额"
                     }
                 }
             }
@@ -152,6 +213,29 @@ class AccountingFormController(
         var account2 = ""
         var feeStr = "0"
         var finalMoney = rawMoneyStr.toDouble()
+
+        // Handle Currency Conversion
+        val enabledCodes = CurrencyManager.getEnabledCurrencies(ctx)
+        val selectedIndex = spCurrency.selectedItemPosition
+        val selectedCurrency = if (selectedIndex >= 0 && selectedIndex < enabledCodes.size) {
+            enabledCodes[selectedIndex]
+        } else {
+            "CNY"
+        }
+
+        var remarkStr = etRemark.text.toString()
+        
+        if (selectedCurrency != "CNY") {
+            val cnyAmount = CurrencyManager.convertToCny(finalMoney, selectedCurrency)
+            val formattedCnyStr = String.format(Locale.US, "%.2f", cnyAmount)
+            
+            // Append info to remarks: e.g. (10.00 EUR ≈ 78.50 CNY)
+            val curInfo = "(${String.format(Locale.US, "%.2f", finalMoney)} $selectedCurrency ≈ $formattedCnyStr CNY)"
+            remarkStr = if (remarkStr.isEmpty()) curInfo else "$remarkStr $curInfo"
+            
+            finalMoney = formattedCnyStr.toDouble()
+        }
+
         var finalCategory = if (tvCategory.text.contains("选择")) "" else tvCategory.text.toString().replace(" > ", "/::/").replace(">", "/::/")
 
         if (typeIndex == 2 || typeIndex == 3) { // 转账或还款模式
@@ -170,7 +254,7 @@ class AccountingFormController(
             type = typeIndex.toString(),
             money = finalMoney.toString(),
             time = tvTime.text.toString(),
-            remark = etRemark.text.toString(),
+            remark = remarkStr,
             catename = finalCategory,
             accountname = account1,
             accountname2 = account2,
@@ -196,7 +280,7 @@ class AccountingFormController(
             account1,
             finalCategoryString,
             tvTime.text.toString(),
-            etRemark.text.toString(),
+            remarkStr,
             resolvedIcon, // 保存图标链接
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()) // 记录当前记账时间
         )
@@ -262,6 +346,7 @@ class AccountingFormController(
                 tvTime.text = timeStr
                 if (showToast) playHighlightAnimation(tvTime)
             }
+
             if (showToast) Utils.toast(ctx, "✨ 智能填写完成")
         }
 

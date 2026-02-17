@@ -26,6 +26,13 @@ class SettingsActivity : AppCompatActivity() {
         container = findViewById(R.id.container_main)
         findViewById<View>(R.id.btn_back).setOnClickListener { finish() }
 
+        // 右上角添加按钮
+        findViewById<View>(R.id.btn_add_category).setOnClickListener {
+            val intent = Intent(this@SettingsActivity, AddCategoryActivity::class.java)
+            intent.putExtra("type", currentType)
+            startActivity(intent)
+        }
+
         // 处理顶部 Tab 切换
         val rgType = findViewById<RadioGroup>(R.id.rg_type)
         rgType.setOnCheckedChangeListener { _, checkedId ->
@@ -73,20 +80,6 @@ class SettingsActivity : AppCompatActivity() {
                 container.addView(createSubPanel(matchedParent))
             }
         }
-
-        // 底部新增按钮
-        val btnAdd = TextView(this).apply {
-            text = "+ 新增${if(currentType == Prefs.TYPE_EXPENSE) "支出" else "收入"}分类"
-            gravity = android.view.Gravity.CENTER
-            setPadding(0, 80, 0, 80)
-            setTextColor(Color.GRAY)
-            setOnClickListener {
-                val intent = Intent(this@SettingsActivity, AddCategoryActivity::class.java)
-                intent.putExtra("type", currentType)
-                startActivity(intent)
-            }
-        }
-        container.addView(btnAdd)
     }
 
     private fun createSubPanel(parent: CategoryNode): View {

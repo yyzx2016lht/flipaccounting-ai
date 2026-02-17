@@ -26,8 +26,30 @@ class FlipDetector(
     private var lastTriggerTime = 0L // 上次成功激发的时间点
 
     // --- 灵敏度调节参数 ---
-    private val G_THRESHOLD = 7.5f    // 判定阈值：越接近 9.8 越严格（要求手机越平）
-    private val MAX_FLIP_DURATION = 400L // 快速翻转定义：从下到上必须在 500ms 内完成
+    // G_THRESHOLD: 重力阈值。范围 5.0 (容易) - 9.0 (极难)。 用户调节 0-100。
+    // MAX_FLIP_DURATION: 上下翻转的最大耗时。范围 300ms (极快) - 800ms (慢悠悠)。 用户调节 0-100。
+
+    private fun getGThreshold(): Float {
+        // 进度 0 -> 5.0f (灵敏), 100 -> 9.0 (严格)
+        // 默认 50 -> 7.0f
+        val progress = Prefs.getFlipSensitivity(ctx)
+        return 5.0f + (progress / 100f) * 4.0f
+    }
+
+    private fun getMaxFlipDuration(): Long {
+         // 进度暂不开放给用户，或者也可以复用Sensitivity
+         // 这里我们可以简单起见，灵敏度越高(进度越小)，检测越容易（阈值低，时间长）
+         // 灵敏度越低(进度大)，检测越难（阈值高，时间短）
+         
+         // 假设 Sensitivity 定义为 "触发难度"：
+         // 0 (最容易触发): G=5.0, Time=800ms
+         // 100 (最难触发): G=9.0, Time=300ms
+         val progress = Prefs.getFlipSensitivity(ctx)
+         return 800L - (progress / 100L) * 500L
+    }
+
+    // private val G_THRESHOLD = 7.5f    // OLD
+    // private val MAX_FLIP_DURATION = 400L // OLD
 
     fun start(): Boolean = sensor?.let {
         manager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
@@ -41,9 +63,19 @@ class FlipDetector(
         val now = SystemClock.uptimeMillis()
 
         // 1. 判定当前朝向
+        // 动态获取当前灵敏度
+        val isCustom = Prefs.isUseCustomSensitivity(ctx)
+        val gThreshold = if (isCustom) {
+            Prefs.getCustomGThreshold(ctx)
+        } else {
+            val progress = Prefs.getFlipSensitivity(ctx) // 0-100, 0最灵敏(阈值低)
+            // 映射：0 -> 5.5f, 100 -> 9.0f
+            5.5f + (progress / 100f) * 3.5f
+        }
+        
         val currentFace = when {
-            z > G_THRESHOLD -> Face.UP
-            z < -G_THRESHOLD -> Face.DOWN
+            z > gThreshold -> Face.UP
+            z < -gThreshold -> Face.DOWN
             else -> Face.UNKNOWN
         }
 
@@ -54,15 +86,24 @@ class FlipDetector(
         if (currentFace == Face.DOWN) {
             // 记录手机开始“面朝下”的时刻
             faceDownTime = now
-            Logger.d(ctx, "FlipDetector", "Face DOWN detected")
+            Logger.d(ctx, "FlipDetector", "Face DOWN detected. Threshold=$gThreshold")
         } else if (currentFace == Face.UP) {
             // 当检测到“面朝上”时，检查之前是否是“面朝下”
             if (lastFace == Face.DOWN) {
+                // 动态获取时间阈值
+                val maxDuration = if (isCustom) {
+                    Prefs.getCustomMaxDuration(ctx)
+                } else {
+                    val progress = Prefs.getFlipSensitivity(ctx)
+                    // 映射：0 -> 800ms, 100 -> 300ms
+                    800L - (progress * 5L)
+                }
+                
                 val flipDuration = now - faceDownTime
-                Logger.d(ctx, "FlipDetector", "Flip distance: ${flipDuration}ms")
+                Logger.d(ctx, "FlipDetector", "Flip distance: ${flipDuration}ms. Max allowed: $maxDuration")
 
                 // 判断动作快慢：只有翻转过程耗时在设定范围内，且满足防抖时间
-                if (flipDuration < MAX_FLIP_DURATION && (now - lastTriggerTime > debounceMs)) {
+                if (flipDuration < maxDuration && (now - lastTriggerTime > debounceMs)) {
                     onFlipChange()
                     lastTriggerTime = now
                 }

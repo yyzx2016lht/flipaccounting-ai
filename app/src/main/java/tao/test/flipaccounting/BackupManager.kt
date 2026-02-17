@@ -24,11 +24,14 @@ object BackupManager {
     fun handleExportResult(context: Context, uri: Uri) {
         try {
             val root = JSONObject().apply {
+                // 1. 资产
                 put("assets_v1", Prefs.serializeAssetList(Prefs.getAssets(context)))
+                
+                // 2. 分类
                 put("cat_expense_v1", Prefs.serializeCategoryList(Prefs.getCategories(context, Prefs.TYPE_EXPENSE)))
                 put("cat_income_v1", Prefs.serializeCategoryList(Prefs.getCategories(context, Prefs.TYPE_INCOME)))
                 
-                // 导出账单历史
+                // 3. 账单历史
                 val billsArr = org.json.JSONArray()
                 Prefs.getBills(context).forEach { bill ->
                     val obj = JSONObject()
@@ -44,16 +47,43 @@ object BackupManager {
                 }
                 put("bills_v1", billsArr)
 
-                val wl = org.json.JSONArray()
-                Prefs.getAppWhiteList(context).forEach { wl.put(it) }
-                put("app_white_list", wl)
+                // 4. 白名单
+                put("app_white_list_v1", Prefs.serializeWhiteList(Prefs.getAppWhiteList(context)))
+                
+                // 5. 多币种
+                put("active_currencies_v1", Prefs.getActiveCurrencies(context).joinToString(","))
+                put("exchange_refresh_interval_v1", Prefs.getExchangeRefreshInterval(context))
+                
+                // 6. 灵敏度/翻转设置
+                put("flip_enabled_v1", Prefs.isFlipEnabled(context))
+                put("flip_sensitivity_v1", Prefs.getFlipSensitivity(context))
+                put("flip_debounce_v1", Prefs.getFlipDuration(context))
+                put("use_custom_sensitivity_v1", Prefs.isUseCustomSensitivity(context))
+                put("custom_g_threshold_v1", Prefs.getCustomGThreshold(context))
+                put("custom_max_duration_v1", Prefs.getCustomMaxDuration(context))
+                
+                // 7. 其他偏好
+                put("hide_recents_v1", Prefs.isHideRecents(context))
+                put("back_tap_enabled_v1", Prefs.isBackTapEnabled(context))
+
+                // 8. 显示控制 (新增)
+                put("show_ai_text_v1", Prefs.isShowAiText(context))
+                put("show_ai_voice_v1", Prefs.isShowAiVoice(context))
+                put("show_multi_cur_v1", Prefs.isShowMultiCurrency(context))
+
+                // 9. AI 配置 (建议加上，方便换设备)
+                put("ai_api_key_v1", Prefs.getAiKey(context))
+                put("ai_api_url_v1", Prefs.getAiUrl(context))
+                put("ai_model_id_v1", Prefs.getAiModel(context))
+                put("ai_system_prompt_v1", Prefs.getAiPrompt(context))
             }
             context.contentResolver.openOutputStream(uri)?.use {
                 it.write(root.toString(4).toByteArray())
             }
-            Utils.toast(context, "备份已导出为文件")
+            Utils.toast(context, "备份已成功导出")
         } catch (e: Exception) {
-            Utils.toast(context, "导出失败")
+            e.printStackTrace()
+            Utils.toast(context, "导出失败: ${e.message}")
         }
     }
 
@@ -71,10 +101,15 @@ object BackupManager {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 BufferedReader(InputStreamReader(stream)).forEachLine { sb.append(it) }
             }
-            Prefs.importRawData(context, JSONObject(sb.toString()))
-            Utils.toast(context, "恢复成功，请重启 App")
+            val root = JSONObject(sb.toString())
+
+            // 使用 Prefs 统一导入
+            Prefs.importAll(context, root)
+
+            Utils.toast(context, "备份已恢复，部分设置可能需要重启应用生效")
         } catch (e: Exception) {
-            Utils.toast(context, "无效的备份文件")
+            e.printStackTrace()
+            Utils.toast(context, "导入失败: ${e.message}")
         }
     }
 }
