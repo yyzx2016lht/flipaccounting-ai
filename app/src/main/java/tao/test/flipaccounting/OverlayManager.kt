@@ -81,15 +81,19 @@ class OverlayManager(private val ctx: Context) {
 
         // Initialize Voice Handler
         val voiceHandler = VoiceInputHandler(ctx, aiAssistant) { resultJson ->
-             formController?.fillDataToUi(resultJson, showToast = true)
+            formController?.fillDataToUi(resultJson, showToast = true)
+            val currency = resultJson.optString("currency", "CNY")
+            formController?.setCurrency(currency)
         }
         voiceHandler.setupVoiceButton(formController!!.btnVoice)
 
         // Initialize AI Entry Click (Text input)
         formController!!.layoutAiEntry.setOnClickListener {
-             aiAssistant.showInputPanel { resultJson ->
-                 formController?.fillDataToUi(resultJson, showToast = true)
-             }
+            aiAssistant.showInputPanel { resultJson ->
+                formController?.fillDataToUi(resultJson, showToast = true)
+                val currency = resultJson.optString("currency", "CNY")
+                formController?.setCurrency(currency)
+            }
         }
     }
 

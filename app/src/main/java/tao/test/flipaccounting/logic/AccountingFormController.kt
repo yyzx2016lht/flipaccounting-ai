@@ -367,4 +367,12 @@ class AccountingFormController(
         colorAnim.duration = 1000
         colorAnim.start()
     }
+
+    fun setCurrency(currencyCode: String) {
+        val enabledCodes = CurrencyManager.getEnabledCurrencies(ctx)
+        val index = enabledCodes.indexOf(currencyCode)
+        if (index >= 0) {
+            spCurrency.setSelection(index)
+        }
+    }
 }
