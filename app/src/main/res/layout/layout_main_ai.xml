@@ -113,14 +113,47 @@
             android:insetBottom="0dp"
             android:backgroundTint="#5C6BC0"/>
         <!-- 5. 提示词定制 (Prompt) -->
-        <TextView
-            android:layout_width="wrap_content"
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="系统提示词 (System Prompt)"
-            android:textColor="#666666"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="系统提示词"
+                android:textColor="#666666"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_gravity="center_vertical"/>
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1"/>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_single_prompt"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="单笔"
+                android:textSize="13sp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginEnd="8dp"
+                app:cornerRadius="8dp"
+                app:strokeColor="#5C6BC0"
+                android:textColor="#5C6BC0"/>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_multi_prompt"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="多账单"
+                android:textSize="13sp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                app:cornerRadius="8dp"
+                app:strokeColor="#5C6BC0"
+                android:textColor="#5C6BC0"/>
+        </LinearLayout>
+
         <EditText
             android:id="@+id/et_custom_prompt"
             android:layout_width="match_parent"
@@ -132,7 +165,20 @@
             android:padding="12dp"
             android:textSize="13sp"
             android:textColor="#555555"
-            android:layout_marginBottom="30dp"/>
+            android:layout_marginBottom="16dp"/>
+        <EditText
+            android:id="@+id/et_multi_prompt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minLines="6"
+            android:gravity="top"
+            android:hint="留空将使用系统默认多账单提示词"
+            android:background="@drawable/bg_search_box"
+            android:padding="12dp"
+            android:textSize="13sp"
+            android:textColor="#555555"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone"/>
 
         <!-- 按钮组 -->
         <com.google.android.material.button.MaterialButton

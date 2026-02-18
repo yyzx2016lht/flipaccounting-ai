@@ -5,7 +5,9 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -14,11 +16,13 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+
 // --- 数据模型 ---
 data class ChatRequest(
     val model: String,
     val messages: List<Message>,
-    val temperature: Double = 0.3,
+    val temperature: Double = 0.0,
     val response_format: ResponseFormat? = ResponseFormat("json_object")
 )
 
@@ -47,64 +51,54 @@ interface SiliconFlowApi {
 
 // --- 服务实现 ---
 object AIService {
-  const val DEFAULT_PROMPT = """const val DEFAULT_PROMPT = ""${'"'}你是一个【严格的数据匹配助手】。你的任务是将用户的**单条**自然语言映射到提供的【固定选项列表】中。
 
-【当前基准时间】: {{TIME}}
+    const val DEFAULT_PROMPT = """【任务角色】你是一个专业且严谨的个人账单数据提取助手。你的目标是从用户的自然语言输入中提取具体的、结构化的财务交易信息，并根据提供的资源库（分类、资产、币种）进行准确的语义映射。
 
-【选项列表 (必须严格从以下数据中选择)】
-1. 可用资产库: {{ASSETS}}
-2. 支出分类库: {{EXPENSE_CATS}} 
-   (结构说明: 包含父分类和子分类。请优先匹配最精准的子分类)
-3. 收入分类库: {{INCOME_CATS}}
-4. 可用币种库: {{CURRENCIES}} (默认 CNY)
+【当前上下文】
+1. 资产库: {{ASSETS}} 
+2. 支出分类: {{EXPENSE_CATS}}
+3. 收入分类: {{INCOME_CATS}}
+4. 币种库: {{CURRENCIES}}
+5. 基准日期（用于推算昨天、刚才等）: {{TIME}}
 
-【Type (记账类型) 严格定义】
-- 0: 支出 (默认。消费、购物、**发红包**)
-- 1: 收入 (工资、**收红包**、退款)
-- 2: 转账 (资金在两个自有账户间流动)
-- 3: 还款 (偿还花呗、白条、信用卡等债务)
+【提取与映射规则】
+1. **分类匹配**: 必须依据语义从对应分类库（支出/收入）中选择最准确的项。如果是多级分类，请输出其完整格式（例如: "餐饮/::/午餐"）。
+2. **资产映射**: 必须映射到提供的“资产库”中存在的名称。
+3. **类型确认**: 
+   - 0: 支出（支付、消费、买入、吃饭等）
+   - 1: 收入（返现、退款、工资、收钱等）
+   - 2: 转账（如“支付宝转到工行”）
+   - 3: 还款（如“支出1000还信用卡”）
+4. **时间转换**: 将所有描述（如“刚才”、“刚才吃完午餐”、“昨晚”）转换为格式 "yyyy-MM-dd HH:mm:ss"。
+5. **详细备注**: 提取交易中的具体备注信息（如“汉堡王”、“手机贴膜”），如果没有具体内容，则用分类名代替。
 
-【核心匹配逻辑 (Matching Logic)】
-1. **Category (分类) - 格式必须严格遵守钱迹规范**:
-   - **格式要求**: 必须返回 `父分类名称/::/子分类名称`。
-     - 示例: 若匹配到父类 "吃的" 下的子类 "三餐"，必须返回 `"吃的/::/三餐"`。
-     - 特例: 若匹配到的父类没有子分类 (如 "发红包")，则直接返回 `"发红包"`。
-   - **红包专项规则**: 
-     - 动作含 "发/给/塞" 红包 -> 匹配支出库 **"发红包"** (Type 0)。
-     - 动作含 "收/领/抢" 红包 -> 匹配收入库 **"收红包"** (Type 1)。
-   - **通用规则**: 必须在库中找到语义最匹配的一项。**禁止创造分类名**。
-   - 转账(Type 2)和还款(Type 3)分类返回空字符串 ""。
+【输出格式】
+只输出一个合法的 JSON 对象，不包含代码块标记或多余的解释文字。
+JSON 结构示例：
+{"amount":0.0, "type":0, "asset_name":"微信", "category_name":"餐饮/::/晚餐", "time":"2026-02-18 19:00:00", "remarks":"晚餐", "currency":"CNY", "to_asset_name":"", "fee":0.0}
+"""
 
-2. **Asset (资产)**:
-   - `asset_name`: 支付来源 / 收款账户 / 转出方 / 还款付款方。
-   - `to_asset_name`: 仅用于 转账的转入方 / 还款的还款对象。
-   - **约束**: 必须严格从【可用资产库】中提取 (如 "微信", "支付宝", "招商银行")。若未提及或找不到，返回 ""。
+    const val MULTI_BILL_PROMPT = """【任务角色】你是一个高效的批量账单提取助手。
+你的任务是解析一段话中的多笔交易，并按照指定的资源库进行结构化格式化。
 
-3. **Currency (币种)**:
-   - 默认 "CNY"。若提及其他币种，返回对应的 3字母代码 (如 USD)。
+【当前上下文】
+1. 资产库: {{ASSETS}} 
+2. 支出分类: {{EXPENSE_CATS}}
+3. 收入分类: {{INCOME_CATS}}
+4. 币种库: {{CURRENCIES}}
+5. 基准日期（用于推算）: {{TIME}}
 
-4. **remarks(备注)**:
-   - 从文本中提取简短的概念作为备注，例如我刚刚去超市买菜花了十块钱，提取超市买菜
-【JSON 输出格式】
-{"amount":0.0, "type":0, "asset_name":"", "to_asset_name":"", "category_name":"", "time":"", "remarks":"", "currency":"CNY"}
+【批量提取核心指令】
+1. **分条处理**: 将每一笔具体的金额消费都解析为一个独立的账单对象。
+2. **语义匹配**: 分类和资产必须严格匹配库中的现有名称（层级分类使用 /::/ 连接）。
+3. **日期解析**: 基准日期是 {{TIME}}。请确保一段文字内的时间逻辑自洽（如“刚才”、“然后”等词的衔接）。
+4. **备注细化**: 提取每项交易的具体备注内容。
 
-【格式演示 (Few-Shot)】
-警告：以下示例仅演示 `/::/` 格式，实际分类名请以上方列表为准。
+【输出格式要求】
+严格按照以下 JSON 格式输出结果：
+{"bills": [{"amount":0.0, "type":0, "asset_name":"微信", "category_name":"餐饮/::/午餐", "time":"2026-02-18 12:30:00", "remarks":"午餐", "currency":"CNY"}]}
+"""
 
-输入: "吃拉面20"
-(假设库中有: "吃的" > "三餐")
-输出: {"amount":20.0, "type":0, "asset_name":"", "category_name":"吃的/::/三餐", "time":"...", "remarks":"吃拉面", "currency":"CNY"}
-
-输入: "给小明发了500红包"
-(假设库中有: "发红包", 无子分类)
-输出: {"amount":500.0, "type":0, "asset_name":"", "category_name":"发红包", "time":"...", "remarks":"给小明发红包", "currency":"CNY"}
-
-输入: "打车去公司30元"
-(假设库中有: "交通" > "打车")
-输出: {"amount":30.0, "type":0, "asset_name":"", "category_name":"交通/::/打车", "time":"...", "remarks":"打车去公司", "currency":"CNY"}
-
-输入: "招行还花呗2000"
-输出: {"amount":2000.0, "type":3, "asset_name":"招商银行", "to_asset_name":"花呗", "category_name":"", "time":"...", "remarks":"还款", "currency":"CNY"}""${'"'}"""
     private fun getApi(ctx: Context): SiliconFlowApi {
         var baseUrl = Prefs.getAiUrl(ctx)
         if (baseUrl.isEmpty()) {
@@ -121,63 +115,75 @@ object AIService {
     }
 
     /**
-     * 语音转文字：使用 TeleAI/TeleSpeechASR 模型
+     * 语音转文字：使用 SenseVoiceSmall 模型
      */
     suspend fun speechToText(ctx: Context, audioFile: File): String? {
         val apiKey = Prefs.getAiKey(ctx)
         if (apiKey.isEmpty()) return null
 
         return try {
-            // 1. 准备文件 RequestBody
             val requestFile = okhttp3.RequestBody.create("audio/mpeg".toMediaTypeOrNull(), audioFile)
             val filePart = okhttp3.MultipartBody.Part.createFormData("file", audioFile.name, requestFile)
-
-            // 2. 关键修改：设置正确的模型名称
-            // 根据你的 cURL: model=FunAudioLLM/SenseVoiceSmall
             val modelPart = okhttp3.MultipartBody.Part.createFormData("model", "FunAudioLLM/SenseVoiceSmall")
 
-            // 3. 发送请求
             val response = getApi(ctx).transcribe("Bearer $apiKey", modelPart, filePart)
             response.text
         } catch (e: Exception) {
             e.printStackTrace()
-            // 可以在这里打 Log 查看具体报错
             null
         }
     }
-    // 核心：分析记账文本
-    // 核心：分析记账文本
-    suspend fun analyzeAccounting(ctx: Context, userInput: String): JSONObject? {
+
+    /**
+     * 分析记账文本
+     */
+    suspend fun analyzeAccounting(ctx: Context, userInput: String, isMultiModeOverride: Boolean? = null): JSONObject? {
         Logger.d(ctx, "AIService", "Analyzing: $userInput")
         val apiKey = Prefs.getAiKey(ctx)
         val model = Prefs.getAiModel(ctx)
         if (apiKey.isEmpty()) return null
 
+        val isMultiMode = isMultiModeOverride ?: Prefs.isMultiBillEnabled(ctx)
+
         // 1. 准备数据
         val assets = Prefs.getAssets(ctx).map { it.name }
         val currencies = Prefs.getActiveCurrencies(ctx).toList()
-        // 为了提高 token 利用率，我们将分类拍扁，但保留层级结构字符串
-        val expenseCats = Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).flatMap { parent ->
-            if (parent.subs.isEmpty()) listOf(parent.name)
-            else parent.subs.map { "${"$"}{parent.name} > ${"$"}{it.name}" }
+        
+        val expenseCats = mutableListOf<String>()
+        Prefs.getCategories(ctx, Prefs.TYPE_EXPENSE).forEach { parentNode ->
+            if (parentNode.subs.isEmpty()) {
+                expenseCats.add(parentNode.name)
+            } else {
+                parentNode.subs.forEach { childNode ->
+                    expenseCats.add("${parentNode.name}/::/${childNode.name}")
+                }
+            }
         }
-        val incomeCats = Prefs.getCategories(ctx, Prefs.TYPE_INCOME).flatMap { parent ->
-            if (parent.subs.isEmpty()) listOf(parent.name)
-            else parent.subs.map { "${"$"}{parent.name} > ${"$"}{it.name}" }
+        
+        val incomeCats = mutableListOf<String>()
+        Prefs.getCategories(ctx, Prefs.TYPE_INCOME).forEach { parentNode ->
+            if (parentNode.subs.isEmpty()) {
+                incomeCats.add(parentNode.name)
+            } else {
+                parentNode.subs.forEach { childNode ->
+                    incomeCats.add("${parentNode.name}/::/${childNode.name}")
+                }
+            }
         }
+
         val demoAsset = assets.firstOrNull() ?: "微信"
         val demoExpenseCat = expenseCats.firstOrNull() ?: "吃的"
         val demoIncomeCat = incomeCats.firstOrNull() ?: "工资"
-        // 2. 时间锚点：格式化为 "2026-02-15 14:30:00 (星期日)"
+
         val now = Date()
         val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val weekFormat = SimpleDateFormat("EEEE", Locale.getDefault())
-        val currentTimeStr = "${"$"}{timeFormat.format(now)} (${"$"}{weekFormat.format(now)})"
+        val currentTimeStr = "${timeFormat.format(now)} (${weekFormat.format(now)})"
 
-        // 3. 构建 System Prompt
-        var p = Prefs.getAiPrompt(ctx)
+        // 2. 构建 System Prompt
+        var p = if (isMultiMode) Prefs.getMultiBillPrompt(ctx) else Prefs.getAiPrompt(ctx)
         if (p.isEmpty()) {
-            p = DEFAULT_PROMPT
+            p = if (isMultiMode) MULTI_BILL_PROMPT else DEFAULT_PROMPT
         }
         
         val systemPrompt = p.replace("{{TIME}}", currentTimeStr)
@@ -189,45 +195,112 @@ object AIService {
             .replace("{{DEMO_EXPENSE_CAT}}", demoExpenseCat)
             .replace("{{DEMO_INCOME_CAT}}", demoIncomeCat)
 
-        // 4. 发送请求
+        // 3. 发送请求
         return try {
             val messages = listOf(
                 Message("system", systemPrompt),
                 Message("user", userInput)
             )
             val request = ChatRequest(model, messages)
-            Logger.d(ctx, "AIService", "Requesting AI: $model")
             val response = getApi(ctx).chat("Bearer $apiKey", request)
-            // 注意：API 返回的 content 可能是字符串形式的 JSON，或者是直接对象
-            // 硅基流动通常返回字符串格式，需要解析
+            
             val content = response.choices.first().message.content
             Logger.d(ctx, "AIService", "AI Response: $content")
-            JSONObject(content)
+            
+            val result = if (isMultiMode) {
+                val cleaned = cleanJsonString(content)
+                val json = JSONObject(cleaned)
+                if (!json.has("bills") && json.has("amount")) {
+                   val wrapper = JSONObject()
+                   wrapper.put("bills", JSONArray().put(json))
+                   wrapper
+                } else if (json.has("bills")) {
+                   json
+                } else {
+                   null
+                }
+            } else {
+                val cleaned = cleanJsonString(content)
+                val json = JSONObject(cleaned)
+                if (json.has("bills")) {
+                    val bills = json.getJSONArray("bills")
+                    if (bills.length() > 0) bills.getJSONObject(0) else null
+                } else {
+                    json
+                }
+            }
+
+            // 4. 分类合法性检查与修正
+            result?.let { root ->
+                if (root.has("bills")) {
+                    val billsArr = root.getJSONArray("bills")
+                    for (i in 0 until billsArr.length()) {
+                        val b = billsArr.getJSONObject(i)
+                        val type = b.optInt("type", 0)
+                        val candidates = if (type == 1) incomeCats else expenseCats
+                        val rawCate = b.optString("category_name", "")
+                        val normalized = rawCate.replace(" > ", "/::/").replace(" - ", "/::/").replace(" / ", "/::/").trim()
+                        
+                        val matched = findBestMatch(normalized, candidates)
+                        if (matched != null) {
+                            b.put("category_name", matched)
+                        } else if (normalized.isNotEmpty()) {
+                            b.put("category_name", resolveOtherCategory(candidates))
+                        }
+                    }
+                } else if (root.has("amount")) {
+                    val type = root.optInt("type", 0)
+                    val candidates = if (type == 1) incomeCats else expenseCats
+                    val rawCate = root.optString("category_name", "")
+                    val normalized = rawCate.replace(" > ", "/::/").replace(" - ", "/::/").replace(" / ", "/::/").trim()
+
+                    val matched = findBestMatch(normalized, candidates)
+                    if (matched != null) {
+                        root.put("category_name", matched)
+                    } else if (normalized.isNotEmpty()) {
+                        root.put("category_name", resolveOtherCategory(candidates))
+                    }
+                }
+            }
+            result
         } catch (e: Exception) {
-            Logger.d(ctx, "AIService", "AI Request Failed: ${"$"}{e.message}")
-            e.printStackTrace()
+            Logger.d(ctx, "AIService", "AI Request Failed: ${e.message}")
             null
         }
     }
 
-    // 辅助：简化分类结构，减少 Token 消耗
-    private fun flattenCategory(node: CategoryNode): Any {
-        if (node.subs.isEmpty()) return node.name
-        // 返回 "父类: [子类1, 子类2]" 的形式
-        return mapOf(node.name to node.subs.map { it.name })
-    }
-    // AIService.kt 内部
-
     /**
-     * 获取模型列表：用于 AI 配置页面的连接测试
+     * 在候选库中寻找最佳匹配
      */
+    private fun findBestMatch(input: String, candidates: List<String>): String? {
+        if (input.isEmpty()) return null
+        if (candidates.contains(input)) return input
+        candidates.find { it.endsWith("/::/$input") }?.let { return it }
+        candidates.find { it.startsWith("$input/::/") }?.let { return it }
+        candidates.find { input.contains(it) || it.contains(input) }?.let { return it }
+        return null
+    }
+
+    private fun resolveOtherCategory(candidates: List<String>): String {
+        val otherMatch = candidates.find { it.contains("其他") }
+        if (otherMatch != null) return otherMatch
+        return if (candidates.isNotEmpty()) candidates.first() else "其他"
+    }
+
+    private fun cleanJsonString(input: String): String {
+        var s = input.trim()
+        if (s.startsWith("```json")) s = s.removePrefix("```json")
+        if (s.startsWith("```")) s = s.removePrefix("```")
+        if (s.endsWith("```")) s = s.removeSuffix("```")
+        return s.trim()
+    }
+
     suspend fun fetchModels(ctx: Context, apiKey: String): List<String> {
         return try {
             val response = getApi(ctx).getModels("Bearer $apiKey")
             val data = response.getAsJsonArray("data")
             data.map { it.asJsonObject.get("id").asString }.sorted()
         } catch (e: Exception) {
-            e.printStackTrace()
             emptyList()
         }
     }

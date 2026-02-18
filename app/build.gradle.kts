@@ -63,4 +63,6 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     // Gson JSON 解析库
     implementation("com.google.code.gson:gson:2.10.1")
+    // 下拉刷新支持
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }

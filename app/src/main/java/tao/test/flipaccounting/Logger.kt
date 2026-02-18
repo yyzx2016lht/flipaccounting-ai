@@ -14,11 +14,13 @@ object Logger {
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val logLine = "[$time] [$tag] $message\n"
         
-        try {
-            val logFile = getLogFile(ctx)
-            logFile.appendText(logLine)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        synchronized(this) {
+            try {
+                val logFile = getLogFile(ctx)
+                logFile.appendText(logLine)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

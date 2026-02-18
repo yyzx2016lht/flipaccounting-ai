@@ -52,6 +52,7 @@ object Prefs {
     private const val KEY_AI_PROVIDER = "ai_provider"
     private const val KEY_AI_URL = "ai_api_url"
     private const val KEY_AI_PROMPT = "ai_system_prompt"
+    private const val KEY_MULTI_BILL_PROMPT = "multi_bill_prompt" // 多账单自定义提示词
     private const val KEY_BILLS = "bills_list"
     private const val KEY_FLIP_SENSITIVITY = "flip_sensitivity_level" // 0-100 progress
     private const val KEY_FLIP_DURATION = "flip_duration_threshold" // Long
@@ -64,6 +65,8 @@ object Prefs {
     private const val KEY_SHOW_AI_TEXT = "show_ai_text"
     private const val KEY_SHOW_AI_VOICE = "show_ai_voice"
     private const val KEY_SHOW_MULTI_CURRENCY = "show_multi_currency"
+    private const val KEY_MULTI_BILL_ENABLED = "multi_bill_enabled" // [新增] 多账单模式
+    private const val KEY_MULTI_BILL_NOT_SYNC = "multi_bill_not_sync" // [新增] 多账单模式不直接同步到钱迹
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -100,38 +103,29 @@ object Prefs {
     fun getAiUrl(ctx: Context): String = prefs(ctx).getString(KEY_AI_URL, "https://api.siliconflow.cn") ?: "https://api.siliconflow.cn"
     fun setAiUrl(ctx: Context, url: String) = prefs(ctx).edit().putString(KEY_AI_URL, url).apply()
 
+
     fun getAiPrompt(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROMPT, "") ?: ""
     fun setAiPrompt(ctx: Context, prompt: String) = prefs(ctx).edit().putString(KEY_AI_PROMPT, prompt).apply()
+
+    fun getMultiBillPrompt(ctx: Context): String = prefs(ctx).getString(KEY_MULTI_BILL_PROMPT, "") ?: ""
+    fun setMultiBillPrompt(ctx: Context, prompt: String) = prefs(ctx).edit().putString(KEY_MULTI_BILL_PROMPT, prompt).apply()
 
     // --- 账单管理 ---
     fun addBill(ctx: Context, bill: Bill) {
         val list = getBills(ctx).toMutableList()
-        list.add(bill)
-        val json = JSONArray()
-        list.forEach {
-            val obj = JSONObject()
-            obj.put("amount", it.amount)
-            obj.put("type", it.type)
-            obj.put("assetName", it.assetName)
-            obj.put("categoryName", it.categoryName)
-            obj.put("time", it.time)
-            obj.put("remarks", it.remarks)
-            obj.put("iconUrl", it.iconUrl)
-            obj.put("recordTime", it.recordTime)
-            json.put(obj)
+        
+        // 如果 bill 的 recordTime 已存在，则是更新操作，先替换掉旧的
+        val existingIndex = if (bill.recordTime.isNotEmpty()) {
+            list.indexOfFirst { it.recordTime == bill.recordTime }
+        } else -1
+        
+        if (existingIndex >= 0) {
+            list[existingIndex] = bill
+        } else {
+            // 如果 recordTime 为空（理论上不应该，但作为兼容性考虑），则直接添加
+            list.add(bill)
         }
-        prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
-    }
 
-    fun deleteBills(ctx: Context, billsToDelete: Collection<Bill>) {
-        val list = getBills(ctx).toMutableList()
-        val toDeleteHashes = billsToDelete.map { "${it.time}_${it.amount}_${it.categoryName}_${it.assetName}" }.toSet()
-        
-        list.removeAll { item ->
-            val hash = "${item.time}_${item.amount}_${item.categoryName}_${item.assetName}"
-            toDeleteHashes.contains(hash)
-        }
-        
         val json = JSONArray()
         list.forEach {
             val obj = JSONObject()
@@ -140,26 +134,43 @@ object Prefs {
             obj.put("assetName", it.assetName)
             obj.put("categoryName", it.categoryName)
             obj.put("time", it.time)
-            obj.put("remarks", it.remarks)
-            obj.put("iconUrl", it.iconUrl)
-            obj.put("recordTime", it.recordTime)
+            if (it.remarks.isNotEmpty()) obj.put("remarks", it.remarks)
+            if (it.iconUrl.isNotEmpty()) obj.put("iconUrl", it.iconUrl)
+            if (it.recordTime.isNotEmpty()) obj.put("recordTime", it.recordTime)
             json.put(obj)
         }
         prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
     }
 
     fun deleteBill(ctx: Context, bill: Bill) {
+        deleteBills(ctx, setOf(bill))
+    }
+
+    fun deleteBills(ctx: Context, billsToDelete: Set<Bill>) {
         val list = getBills(ctx).toMutableList()
-        // 精确匹配删除：通过时间、金额、分类和资产名称来识别
+        val toDeleteRecordTimes = billsToDelete.mapNotNull { if (it.recordTime.isNotEmpty()) it.recordTime else null }.toSet()
+        
         val iterator = list.iterator()
         while(iterator.hasNext()) {
             val item = iterator.next()
-            if (item.time == bill.time && item.amount == bill.amount && 
-                item.categoryName == bill.categoryName && item.assetName == bill.assetName) {
+            // 1. 优先根据 recordTime 删除
+            if (item.recordTime.isNotEmpty() && toDeleteRecordTimes.contains(item.recordTime)) {
                 iterator.remove()
-                break
+                continue
+            }
+            // 2. 备选：根据其他字段删除 (如果没有 recordTime)
+            val matchedInToDelete = billsToDelete.any { bill ->
+                bill.recordTime.isEmpty() && 
+                item.time == bill.time && 
+                item.amount == bill.amount && 
+                item.categoryName == bill.categoryName && 
+                item.assetName == bill.assetName
+            }
+            if (matchedInToDelete) {
+                iterator.remove()
             }
         }
+        
         val json = JSONArray()
         list.forEach {
             val obj = JSONObject()
@@ -168,9 +179,9 @@ object Prefs {
             obj.put("assetName", it.assetName)
             obj.put("categoryName", it.categoryName)
             obj.put("time", it.time)
-            obj.put("remarks", it.remarks)
-            obj.put("iconUrl", it.iconUrl)
-            obj.put("recordTime", it.recordTime)
+            if (it.remarks.isNotEmpty()) obj.put("remarks", it.remarks)
+            if (it.iconUrl.isNotEmpty()) obj.put("iconUrl", it.iconUrl)
+            if (it.recordTime.isNotEmpty()) obj.put("recordTime", it.recordTime)
             json.put(obj)
         }
         prefs(ctx).edit().putString(KEY_BILLS, json.toString()).apply()
@@ -220,6 +231,12 @@ object Prefs {
 
     fun isShowMultiCurrency(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SHOW_MULTI_CURRENCY, false)
     fun setShowMultiCurrency(ctx: Context, show: Boolean) = prefs(ctx).edit().putBoolean(KEY_SHOW_MULTI_CURRENCY, show).apply()
+
+    fun isMultiBillEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_MULTI_BILL_ENABLED, false)
+    fun setMultiBillEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_MULTI_BILL_ENABLED, enabled).apply()
+
+    fun isMultiBillNotSync(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_MULTI_BILL_NOT_SYNC, false)
+    fun setMultiBillNotSync(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_MULTI_BILL_NOT_SYNC, enabled).apply()
 
     // --- 资产管理 ---
     fun getAssets(ctx: Context): List<Asset> {

@@ -27,15 +27,20 @@ import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CircleCrop
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import tao.test.flipaccounting.logic.AccountingFormController
 import tao.test.flipaccounting.ui.FlipSensitivityActivity
+import tao.test.flipaccounting.logic.VoiceInputHandler
+import tao.test.flipaccounting.OverlayManager
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -54,9 +59,16 @@ class MainActivity : AppCompatActivity() {
 
     private var currentSortByBillTime = true // true: 按账单时间, false: 按记账时间
 
+    private lateinit var overlayManager: OverlayManager
+    private lateinit var aiAssistant: AiAssistant
+    private var billAdapter: BillAdapter? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        
+        overlayManager = OverlayManager(this)
+        aiAssistant = AiAssistant(this)
         
         // --- 请求必要权限 ---
         checkAndRequestPermissions()
@@ -162,11 +174,40 @@ class MainActivity : AppCompatActivity() {
         }
 
         // AI 文本识别开关
+        val switchMultiBill = findViewById<SwitchMaterial>(R.id.switch_show_multi_bill)
+        val switchMultiBillNotSync = findViewById<SwitchMaterial>(R.id.switch_multi_bill_not_sync)
+        val layoutAiMain = findViewById<View>(R.id.layout_ai_main_entry)
+        val dividerAi = findViewById<View>(R.id.divider_ai)
+        
         findViewById<SwitchMaterial>(R.id.switch_show_ai).apply {
             isChecked = Prefs.isShowAiText(this@MainActivity)
+            layoutAiMain.visibility = if (isChecked) View.VISIBLE else View.GONE
+            dividerAi.visibility = if (isChecked) View.VISIBLE else View.GONE
+            
             setOnCheckedChangeListener { _, isChecked ->
                 Prefs.setShowAiText(this@MainActivity, isChecked)
-                Utils.toast(this@MainActivity, if (isChecked) "已开启 AI 文本识别入口" else "已隐藏 AI 文本识别入口")
+                layoutAiMain.visibility = if (isChecked) View.VISIBLE else View.GONE
+                dividerAi.visibility = if (isChecked) View.VISIBLE else View.GONE
+                Utils.toast(this@MainActivity, if (isChecked) "已开启 AI 智能工作流" else "已隐藏 AI 入口")
+            }
+        }
+
+        // --- 多账单模式开关 ---
+        switchMultiBill.apply {
+            isChecked = Prefs.isMultiBillEnabled(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setMultiBillEnabled(this@MainActivity, isChecked)
+                switchMultiBillNotSync.isEnabled = isChecked
+                Utils.toast(this@MainActivity, if (isChecked) "已开启多账单模式" else "已关闭多账单模式")
+            }
+        }
+
+        // 多账单不同步开关
+        switchMultiBillNotSync.apply {
+            isChecked = Prefs.isMultiBillNotSync(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setMultiBillNotSync(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "多账单将优先保存至本地" else "多账单将尝试批量同步")
             }
         }
 
@@ -220,6 +261,27 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_flip_sensitivity).setOnClickListener {
             startActivity(Intent(this, FlipSensitivityActivity::class.java))
         }
+    }
+
+    override fun onBackPressed() {
+        if (overlayManager.isShowing()) {
+            overlayManager.removeOverlay(isSaved = false)
+            return
+        }
+
+        // 如果正在编辑历史账单（批量选择模式），先退出选择模式
+        billAdapter?.let { adapter ->
+            if (adapter.isSelectionMode) {
+                adapter.isSelectionMode = false
+                adapter.selectedBills.clear()
+                findViewById<MaterialButton>(R.id.btn_edit_bills).text = "编辑"
+                findViewById<View>(R.id.layout_batch_actions).visibility = View.GONE
+                adapter.notifyDataSetChanged()
+                return
+            }
+        }
+        
+        super.onBackPressed()
     }
 
     private fun setupNavigation() {
@@ -322,6 +384,7 @@ class MainActivity : AppCompatActivity() {
             put("asset_name", bill.assetName)
             put("remarks", bill.remarks)
             put("time", bill.time)
+            put("recordTime", bill.recordTime) // [新增]
             
             if (bill.type == 2) {
                 // 如果是转账，解析出目标资产
@@ -332,10 +395,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        OverlayManager(this).showOverlay(json)
+        OverlayManager(this).showOverlay(json, showSaveOnly = true)
     }
 
     private fun loadBills() {
+        val swipe = findViewById<SwipeRefreshLayout>(R.id.swipe_refresh_bills)
+        swipe?.setOnRefreshListener { loadBills() }
+
         val rv = findViewById<RecyclerView>(R.id.rv_bills)
         val empty = findViewById<View>(R.id.tv_empty_bills)
         val btnEdit = findViewById<MaterialButton>(R.id.btn_edit_bills)
@@ -347,6 +413,7 @@ class MainActivity : AppCompatActivity() {
         val btnToggleSort = findViewById<MaterialButton>(R.id.btn_toggle_sort)
         
         val allBills = Prefs.getBills(this)
+        swipe?.isRefreshing = false // 数据加载完关闭动画
 
         if (allBills.isEmpty()) {
             rv.visibility = View.GONE
@@ -388,6 +455,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             val adapter = BillAdapter(displayItems)
+            billAdapter = adapter
             rv.adapter = adapter
 
             btnEdit.setOnClickListener {
@@ -442,32 +510,56 @@ class MainActivity : AppCompatActivity() {
                 
                 AlertDialog.Builder(this)
                     .setTitle("批量同步到钱迹")
-                    .setMessage("确定要同步选中的 ${adapter.selectedBills.size} 条账单吗？这可能会由于逐个启动记账流程而导致多次跳转。")
-                    .setPositiveButton("确定同步") { _, _ ->
-                        // 倒序同步，保证时间较早的先处理
+                    .setMessage("确定要同步选中的 ${adapter.selectedBills.size} 条账单吗？程序将在后台每隔 5 秒自动执行同步，请保持钱迹已打开。")
+                    .setPositiveButton("开始批量同步") { _, _ ->
                         val selected = adapter.selectedBills.toList().sortedBy { it.time }
-                        selected.forEach { bill ->
-                            val qUrl = Utils.buildQianjiUrl(
-                                type = bill.type.toString(),
-                                money = bill.amount.toString(),
-                                time = bill.time,
-                                remark = bill.remarks,
-                                catename = bill.categoryName,
-                                accountname = bill.assetName,
-                                accountname2 = if (bill.type == 2 || bill.type == 3) bill.categoryName.replace("转账到 ", "").replace("还款到 ", "") else null
-                            )
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(qUrl)).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            startActivity(intent)
-                        }
                         
+                        // 退出选择模式
                         adapter.isSelectionMode = false
                         adapter.selectedBills.clear()
                         btnEdit.text = "编辑"
                         layoutBatch.visibility = View.GONE
                         adapter.notifyDataSetChanged()
-                        Utils.toast(this, "同步任务已分发")
+
+                        // 开启后台协程执行延时同步任务
+                        CoroutineScope(Dispatchers.Main).launch {
+                            Utils.toast(this@MainActivity, "开始自动批量同步(每笔5秒)，请保持屏幕开启...")
+                            
+                            selected.forEachIndexed { index, bill ->
+                                val isTransfer = bill.type == 2 || bill.type == 3
+                                // 修正分类逻辑：账单列表中展示的是 "父 > 子"，同步给钱迹需要改为 "父/::/子"
+                                val finalCategory = if (isTransfer) "" else bill.categoryName.replace(" > ", "/::/")
+                                
+                                val qUrl = Utils.buildQianjiUrl(
+                                    type = bill.type.toString(),
+                                    money = String.format(Locale.US, "%.2f", bill.amount),
+                                    time = bill.time,
+                                    remark = bill.remarks,
+                                    catename = finalCategory,
+                                    accountname = bill.assetName,
+                                    accountname2 = if (isTransfer) bill.categoryName.replace("转账到 ", "").replace("还款到 ", "") else null,
+                                    showresult = "0"
+                                )
+                                
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(qUrl)).apply {
+                                        // 增加标识位，尝试提升连续跳转的成功率
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                                    }
+                                    startActivity(intent)
+                                    Logger.d(this@MainActivity, "BatchSync", "正在同步第 ${index + 1}/${selected.size} 条: ${bill.remarks}")
+                                } catch (e: Exception) {
+                                    Logger.d(this@MainActivity, "BatchSync", "同步失败 ${index + 1}: ${e.message}")
+                                }
+
+                                // 保持 5 秒间隔，确保钱迹有足够时间处理记录
+                                if (index < selected.size - 1) {
+                                    delay(5000)
+                                }
+                            }
+                            
+                            Utils.toast(this@MainActivity, "✅ 批量同步任务(共${selected.size}条)已完成")
+                        }
                     }
                     .setNegativeButton("取消", null)
                     .show()
@@ -649,10 +741,14 @@ class MainActivity : AppCompatActivity() {
         val etUrl = findViewById<EditText>(R.id.et_api_url)
         val etKey = findViewById<EditText>(R.id.et_api_key)
         val spinnerModels = findViewById<Spinner>(R.id.spinner_models)
-        val etPrompt = findViewById<EditText>(R.id.et_custom_prompt)
-        val btnResetPrompt = findViewById<MaterialButton>(R.id.btn_reset_prompt)
-        val btnTest = findViewById<MaterialButton>(R.id.btn_test_conn)
-        val btnSave = findViewById<MaterialButton>(R.id.btn_save_config)
+
+    val etPrompt = findViewById<EditText>(R.id.et_custom_prompt)
+    val etMultiPrompt = findViewById<EditText>(R.id.et_multi_prompt)
+    val btnSinglePrompt = findViewById<MaterialButton>(R.id.btn_single_prompt)
+    val btnMultiPrompt = findViewById<MaterialButton>(R.id.btn_multi_prompt)
+    val btnResetPrompt = findViewById<MaterialButton>(R.id.btn_reset_prompt)
+    val btnTest = findViewById<MaterialButton>(R.id.btn_test_conn)
+    val btnSave = findViewById<MaterialButton>(R.id.btn_save_config)
 
         // 初始化提供商选择器
         val providerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, providers)
@@ -663,9 +759,34 @@ class MainActivity : AppCompatActivity() {
         val currentUrl = Prefs.getAiUrl(this)
         val currentKey = Prefs.getAiKey(this)
         val currentModel = Prefs.getAiModel(this)
+
         var currentPrompt = Prefs.getAiPrompt(this)
-        if (currentPrompt.isEmpty()) {
-            currentPrompt = AIService.DEFAULT_PROMPT
+        if (currentPrompt.isEmpty()) currentPrompt = AIService.DEFAULT_PROMPT
+        var currentMultiPrompt = Prefs.getMultiBillPrompt(this)
+        if (currentMultiPrompt.isEmpty()) currentMultiPrompt = AIService.MULTI_BILL_PROMPT
+
+        // 默认选中单笔
+        var isMultiMode = false
+        etPrompt.setText(currentPrompt)
+        etMultiPrompt.setText(currentMultiPrompt)
+        etPrompt.visibility = View.VISIBLE
+        etMultiPrompt.visibility = View.GONE
+        btnSinglePrompt.isEnabled = false
+        btnMultiPrompt.isEnabled = true
+
+        btnSinglePrompt.setOnClickListener {
+            isMultiMode = false
+            etPrompt.visibility = View.VISIBLE
+            etMultiPrompt.visibility = View.GONE
+            btnSinglePrompt.isEnabled = false
+            btnMultiPrompt.isEnabled = true
+        }
+        btnMultiPrompt.setOnClickListener {
+            isMultiMode = true
+            etPrompt.visibility = View.GONE
+            etMultiPrompt.visibility = View.VISIBLE
+            btnSinglePrompt.isEnabled = true
+            btnMultiPrompt.isEnabled = false
         }
 
         if (currentProvider.isNotEmpty()) {
@@ -679,9 +800,13 @@ class MainActivity : AppCompatActivity() {
         btnResetPrompt.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("确定恢复默认？")
-                .setMessage("这将清除您的自定义提示词，并恢复为系统最新的默认版本（包含对'还款'模式的识别优化）。")
+                .setMessage("这将清除当前模式下的自定义提示词，并恢复为系统默认版本。")
                 .setPositiveButton("恢复") { _, _ ->
-                    etPrompt.setText(AIService.DEFAULT_PROMPT)
+                    if (isMultiMode) {
+                        etMultiPrompt.setText(AIService.MULTI_BILL_PROMPT)
+                    } else {
+                        etPrompt.setText(AIService.DEFAULT_PROMPT)
+                    }
                     Utils.toast(this, "已恢复，请记得点击下方的'保存配置'")
                 }
                 .setNegativeButton("取消", null)
@@ -742,6 +867,7 @@ class MainActivity : AppCompatActivity() {
             val key = etKey.text.toString().trim()
             val selectedModel = spinnerModels.selectedItem?.toString() ?: currentModel
             val prompt = etPrompt.text.toString().trim()
+            val multiPrompt = etMultiPrompt.text.toString().trim()
 
             if (key.isEmpty()) {
                 Utils.toast(this, "API 令牌不能为空")
@@ -753,6 +879,7 @@ class MainActivity : AppCompatActivity() {
             Prefs.setAiKey(this, key)
             Prefs.setAiModel(this, selectedModel)
             Prefs.setAiPrompt(this, prompt)
+            Prefs.setMultiBillPrompt(this, multiPrompt)
             Utils.toast(this, "配置已成功保存")
         }
     }

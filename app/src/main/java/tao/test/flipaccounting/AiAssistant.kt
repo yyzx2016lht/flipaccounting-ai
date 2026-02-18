@@ -1,6 +1,8 @@
 package tao.test.flipaccounting
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +42,7 @@ class AiAssistant(private val ctx: Context) {
     fun showInputPanel(
         defaultText: String? = null,
         mode: Int = MODE_INPUT,
+        isMultiMode: Boolean? = null, // [新增]
         onResult: (JSONObject) -> Unit
     ) {
         // 如果弹窗已存在，直接复用，避免闪烁
@@ -47,9 +50,25 @@ class AiAssistant(private val ctx: Context) {
             updatePanelState(mode, defaultText)
             // 如果是 Loading 模式且有文字，说明语音转写完成了，触发分析
             if (mode == MODE_LOADING && !defaultText.isNullOrEmpty()) {
-                startAnalysis(defaultText, onResult)
+                startAnalysis(defaultText, isMultiMode, onResult)
             }
             return
+        }
+
+        // 仅在真正弹出新面板时，通知停止翻转监测，减少输入干扰并释放传感器句柄
+        if (Prefs.isFlipEnabled(ctx)) {
+            val stopIntent = Intent(ctx, OverlayService::class.java).apply {
+                action = OverlayService.ACTION_STOP_FLIP
+            }
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ctx.startForegroundService(stopIntent)
+                } else {
+                    ctx.startService(stopIntent)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         // --- 初始化弹窗 ---
@@ -60,6 +79,25 @@ class AiAssistant(private val ctx: Context) {
             .setView(view)
             .setCancelable(true)
             .create()
+
+        dialog.setOnDismissListener {
+            // 弹窗关闭后，恢复翻转检测（如果开启了的话）
+            if (Prefs.isFlipEnabled(ctx)) {
+                val startIntent = Intent(ctx, OverlayService::class.java).apply {
+                    action = OverlayService.ACTION_START_FLIP
+                }
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        ctx.startForegroundService(startIntent)
+                    } else {
+                        ctx.startService(startIntent)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            currentDialog = null
+        }
 
         dialog.window?.apply {
             setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -85,6 +123,20 @@ class AiAssistant(private val ctx: Context) {
         val btnIdentify = view.findViewById<View>(R.id.btn_dialog_identify)
         val etInput = view.findViewById<EditText>(R.id.et_ai_input)
 
+        // [修复] 解决在部分系统（如 OPPO/Vivo/三星）中，Service 覆盖层 EditText 点击多次导致的浮动工具栏崩溃 (UnsupportedOperationException)
+        // 该异常是因为 Service Context 并非视觉 Context，不关联 Display，导致系统尝试弹出“复制/粘贴/插入”浮动菜单时失败。
+        // 在 Service 环境中通过禁用 Insertion/Selection ActionModeCallback 来阻止系统调起该工具栏。
+        if (ctx !is Activity) {
+            val blankCallback = object : android.view.ActionMode.Callback {
+                override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+                override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+                override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?): Boolean = false
+                override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+            }
+            etInput.customInsertionActionModeCallback = blankCallback
+            etInput.customSelectionActionModeCallback = blankCallback
+        }
+
         // 保存全局引用方便 updatePanelState 使用
         tvThinkingLog = view.findViewById(R.id.tv_thinking_log)
         tvRecordedTextPreview = view.findViewById(R.id.tv_recorded_text_preview)
@@ -97,7 +149,7 @@ class AiAssistant(private val ctx: Context) {
             val text = etInput.text.toString().trim()
             if (text.isNotEmpty()) {
                 updatePanelState(MODE_LOADING, "正在分析语义...")
-                startAnalysis(text, onResult)
+                startAnalysis(text, isMultiMode, onResult)
             }
         }
 
@@ -172,9 +224,9 @@ class AiAssistant(private val ctx: Context) {
     /**
      * 执行 AI 分析请求
      */
-    private fun startAnalysis(text: String, onResult: (JSONObject) -> Unit) {
+    private fun startAnalysis(text: String, isMultiMode: Boolean?, onResult: (JSONObject) -> Unit) {
         CoroutineScope(Dispatchers.IO).launch {
-            val result = AIService.analyzeAccounting(ctx, text)
+            val result = AIService.analyzeAccounting(ctx, text, isMultiMode)
             withContext(Dispatchers.Main) {
                 if (result != null) {
                     showResult(result, onResult)
@@ -197,47 +249,68 @@ class AiAssistant(private val ctx: Context) {
         val layoutLoading = view.findViewById<View>(R.id.layout_loading)
         val layoutResult = view.findViewById<View>(R.id.layout_result)
         val btnClose = view.findViewById<View>(R.id.btn_close)
+        
         val tvResTime = view.findViewById<TextView>(R.id.tv_res_time)
         val tvResMoney = view.findViewById<TextView>(R.id.tv_res_money)
         val tvResCate = view.findViewById<TextView>(R.id.tv_res_cate)
         val tvResAsset = view.findViewById<TextView>(R.id.tv_res_asset)
         val btnConfirm = view.findViewById<View>(R.id.btn_confirm_fill)
 
-        // 解析数据
-        val type = result.optInt("type", 0)
-        val amt = result.optDouble("amount", 0.0)
-        val fee = result.optDouble("fee", 0.0)
-        val symbol = when(type) {
-            1 -> "+"
-            2 -> "⇄"
-            3 -> "💸" // 还款标志
-            else -> "-"
-        }
-
-        tvResMoney.text = if (type == 1) "+$amt" else if (type == 2 || type == 3) "$amt" else "-$amt"
-        
-        val timeStr = result.optString("time", "")
-        if (timeStr.isNotEmpty()) {
-            tvResTime.text = "时间: $timeStr"
-            tvResTime.visibility = View.VISIBLE
+        if (result.has("bills")) {
+            // 多账单模式显示预览
+            val bills = result.getJSONArray("bills")
+            val count = bills.length()
+            
+            tvResMoney.text = "识别到 $count 条账单"
+            tvResMoney.setTextColor(android.graphics.Color.parseColor("#5C6BC0"))
+            
+            // 取第一条作为简单的预览
+            if (count > 0) {
+                val first = bills.getJSONObject(0)
+                val amt = first.optDouble("amount", 0.0)
+                val cat = first.optString("category_name", "").replace("/::/", " > ")
+                tvResCate.text = "首笔: $cat ($amt)"
+                tvResAsset.text = "点击确认后将依次处理"
+            }
+            tvResTime.visibility = View.GONE
         } else {
-            tvResTime.text = "时间: 现在"
-        }
+            // 原有的单笔模式解析数据
+            val type = result.optInt("type", 0)
+            val amt = result.optDouble("amount", 0.0)
+            val fee = result.optDouble("fee", 0.0)
+            val symbol = when(type) {
+                1 -> "+"
+                2 -> "⇄"
+                3 -> "💸" // 还款标志
+                else -> "-"
+            }
 
-        when (type) {
-            2 -> { // 转账
-                tvResCate.text = "转入: ${result.optString("to_asset_name", "--")}"
-                tvResAsset.text = "转出: ${result.optString("asset_name", "--")}"
+            tvResMoney.text = if (type == 1) "+$amt" else if (type == 2 || type == 3) "$amt" else "-$amt"
+            tvResMoney.setTextColor(android.graphics.Color.parseColor(if (type == 1) "#E91E63" else "#2E7D32"))
+            
+            val timeStr = result.optString("time", "")
+            if (timeStr.isNotEmpty()) {
+                tvResTime.text = "时间: $timeStr"
+                tvResTime.visibility = View.VISIBLE
+            } else {
+                tvResTime.text = "时间: 现在"
             }
-            3 -> { // 还款
-                tvResCate.text = "还款给: ${result.optString("to_asset_name", "--")}"
-                tvResAsset.text = "支付方: ${result.optString("asset_name", "--")}"
-            }
-            else -> { // 支出、收入
-                val cat = result.optString("category_name", "--")
-                tvResCate.text = "分类: ${cat.replace("/::/", " > ")}"
-                val assetName = result.optString("asset_name", "")
-                tvResAsset.text = "账户: ${if (assetName.isEmpty()) "未识别" else assetName}"
+
+            when (type) {
+                2 -> { // 转账
+                    tvResCate.text = "转入: ${result.optString("to_asset_name", "--")}"
+                    tvResAsset.text = "转出: ${result.optString("asset_name", "--")}"
+                }
+                3 -> { // 还款
+                    tvResCate.text = "还款给: ${result.optString("to_asset_name", "--")}"
+                    tvResAsset.text = "支付方: ${result.optString("asset_name", "--")}"
+                }
+                else -> { // 支出、收入
+                    val cat = result.optString("category_name", "--")
+                    tvResCate.text = "分类: ${cat.replace("/::/", " > ")}"
+                    val assetName = result.optString("asset_name", "")
+                    tvResAsset.text = "账户: ${if (assetName.isEmpty()) "未识别" else assetName}"
+                }
             }
         }
 

@@ -17,6 +17,7 @@ import java.io.File
 class VoiceInputHandler(
     private val ctx: Context,
     private val aiAssistant: AiAssistant,
+    private val isMultiModeProvider: () -> Boolean, // [新增] 提供当前是单笔还是多笔模式
     private val onResult: (JSONObject) -> Unit
 ) {
     private var mediaRecorder: android.media.MediaRecorder? = null
@@ -52,7 +53,10 @@ class VoiceInputHandler(
                         // 触发震动反馈：长按确认进入录音
                         Utils.vibrate(ctx) 
                         
-                        aiAssistant.showInputPanel(mode = AiAssistant.MODE_RECORDING) { resultJson ->
+                        aiAssistant.showInputPanel(
+                            mode = AiAssistant.MODE_RECORDING, 
+                            isMultiMode = isMultiModeProvider()
+                        ) { resultJson ->
                             onResult(resultJson)
                         }
 
@@ -74,13 +78,19 @@ class VoiceInputHandler(
                             if (!isWannaCancel) {
                                 isWannaCancel = true
                                 Utils.vibrate(ctx, 30) // 触感反馈：进入取消区
-                                aiAssistant.showInputPanel(mode = AiAssistant.MODE_CANCEL) { onResult(it) }
+                                aiAssistant.showInputPanel(
+                                    mode = AiAssistant.MODE_CANCEL, 
+                                    isMultiMode = isMultiModeProvider()
+                                ) { onResult(it) }
                             }
                         } else {
                             if (isWannaCancel) {
                                 isWannaCancel = false
                                 Utils.vibrate(ctx, 10) // 触感反馈：回到录音区
-                                aiAssistant.showInputPanel(mode = AiAssistant.MODE_RECORDING) { onResult(it) }
+                                aiAssistant.showInputPanel(
+                                    mode = AiAssistant.MODE_RECORDING, 
+                                    isMultiMode = isMultiModeProvider()
+                                ) { onResult(it) }
                             }
                         }
                     }
@@ -109,7 +119,8 @@ class VoiceInputHandler(
                                             // 5. 成功：显示结果
                                             aiAssistant.showInputPanel(
                                                 defaultText = text,
-                                                mode = AiAssistant.MODE_LOADING
+                                                mode = AiAssistant.MODE_LOADING,
+                                                isMultiMode = isMultiModeProvider()
                                             ) { resultJson ->
                                                 onResult(resultJson)
                                             }

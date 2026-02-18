@@ -1,6 +1,7 @@
 package tao.test.flipaccounting.logic
 
 import android.animation.ObjectAnimator
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -17,12 +18,16 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 import tao.test.flipaccounting.CurrencyData
+import tao.test.flipaccounting.Logger
+import kotlinx.coroutines.*
+import tao.test.flipaccounting.AIService
 
 class AccountingFormController(
     private val ctx: Context,
     private val rootView: View,
-    private val onCloseRequest: () -> Unit
+    private val onCloseRequest: (isSaved: Boolean) -> Unit // 修改回调，带上状态
 ) {
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val etMoney: EditText = rootView.findViewById(R.id.et_amount)
     private val spType: Spinner = rootView.findViewById(R.id.spinner_type)
     private val layoutAccount: View = rootView.findViewById(R.id.layout_account)
@@ -36,11 +41,14 @@ class AccountingFormController(
     private val tvTime: TextView = rootView.findViewById(R.id.tv_time)
     private val etRemark: EditText = rootView.findViewById(R.id.et_remark)
     private val btnSave: Button = rootView.findViewById(R.id.btn_save)
+    private val btnSaveOnly: Button = rootView.findViewById(R.id.btn_save_only)
     private val btnCancel: Button = rootView.findViewById(R.id.btn_cancel)
     val btnVoice: ImageView = rootView.findViewById(R.id.btn_ai_voice)
     val layoutAiEntry: LinearLayout = rootView.findViewById(R.id.layout_ai_entry)
     val btnAiIcon: ImageView = rootView.findViewById(R.id.btn_ai_magic)
     private val spCurrency: Spinner = rootView.findViewById(R.id.spinner_currency)
+
+    private var editingRecordTime: String = "" // [新增] 保存正在编辑的历史账单 ID
 
     init {
         CurrencyManager.init(ctx)
@@ -50,6 +58,26 @@ class AccountingFormController(
         setupListeners()
         setupDefaults()
         setupAnimations()
+        
+        // 关键修复：解决服务覆盖层中 EditText 点击导致的 ActionMode 崩溃 (Token 验证失败)
+        disableActionModeForEditTexts()
+    }
+
+    private fun disableActionModeForEditTexts() {
+        val callback = object : android.view.ActionMode.Callback {
+            override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+            override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+            override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?): Boolean = false
+            override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+        }
+        etMoney.customSelectionActionModeCallback = callback
+        etFee.customSelectionActionModeCallback = callback
+        etRemark.customSelectionActionModeCallback = callback
+        
+        // 同时也禁用拼写检查，因为它也会触发类似的浮动框
+        etMoney.inputType = etMoney.inputType or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        etFee.inputType = etFee.inputType or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        etRemark.inputType = etRemark.inputType or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
     }
 
     private fun setupVisibility() {
@@ -198,10 +226,11 @@ class AccountingFormController(
         }
 
         btnSave.setOnClickListener { handleSave() }
-        btnCancel.setOnClickListener { onCloseRequest() }
+        btnSaveOnly.setOnClickListener { handleSave(isSaveOnly = true) }
+        btnCancel.setOnClickListener { onCloseRequest(false) } // 取消
     }
 
-    private fun handleSave() {
+    private fun handleSave(isSaveOnly: Boolean = false) {
         val rawMoneyStr = etMoney.text.toString().replace("-", "")
         if (rawMoneyStr.isEmpty() || (rawMoneyStr.toDoubleOrNull() ?: 0.0) <= 0.0) {
             Utils.toast(ctx, "金额无效")
@@ -282,21 +311,39 @@ class AccountingFormController(
             tvTime.text.toString(),
             remarkStr,
             resolvedIcon, // 保存图标链接
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()) // 记录当前记账时间
+            if (editingRecordTime.isNotEmpty()) editingRecordTime else 
+                SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()) // 记录当前记账时间
         )
         Prefs.addBill(ctx, bill)
+
+        if (isSaveOnly) {
+            Utils.toast(ctx, "已保存至账单列表")
+            onCloseRequest(true) // 保存并关闭
+            return
+        }
 
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             ctx.startActivity(intent)
-            onCloseRequest()
+            onCloseRequest(true) // 发送并关闭
         } catch (e: Exception) {
             Utils.toast(ctx, "未安装钱迹")
         }
     }
 
+    fun showSaveOnlyButton(show: Boolean) {
+        btnSaveOnly.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     fun fillDataToUi(result: JSONObject, showToast: Boolean = true) {
+        // [新增] 如果是编辑模式，记录下 recordTime，否则重置
+        editingRecordTime = if (result.has("recordTime")) {
+            result.getString("recordTime")
+        } else {
+            ""
+        }
+
         val targetType = result.optInt("type", 0)
         val currentType = spType.selectedItemPosition
 
@@ -341,31 +388,27 @@ class AccountingFormController(
                 etRemark.setText(remark)
                 if (showToast) playHighlightAnimation(etRemark)
             }
+            
+            // E. 填充时间：必须符合 yyyy-MM-dd HH:mm:ss 格式
             val timeStr = result.optString("time", "")
-            if (timeStr.isNotEmpty() && timeStr.contains("-")) {
-                tvTime.text = timeStr
+            if (timeStr.isNotEmpty()) {
+                // 如果 AI 返回的是标准的 yyyy-MM-dd... 格式，直接填充
+                if (timeStr.matches(Regex("\\d{4}-\\d{2}-\\d{2}.*"))) {
+                    tvTime.text = timeStr
+                } else {
+                    // 如果仍然是“昨天”等文字（提示词失效），我们不建议填充日期字段
+                    Logger.d(ctx, "AccountingForm", "AI返回了非标准时间格式: $timeStr")
+                }
                 if (showToast) playHighlightAnimation(tvTime)
             }
-
-            if (showToast) Utils.toast(ctx, "✨ 智能填写完成")
         }
 
-        if (currentType != targetType) {
+        if (currentType != targetType && targetType < spType.adapter.count) {
             spType.setSelection(targetType)
-            // 增加延迟确保 Spinner 的监听器触发完毕后，我们的数据填充才开始
-            spType.postDelayed({ executeFillData() }, 350)
+            spType.post { executeFillData() }
         } else {
-            // 如果类型没变，直接填充
             executeFillData()
         }
-    }
-
-    private fun playHighlightAnimation(view: View) {
-        val colorAnim = android.animation.ObjectAnimator.ofArgb(
-            view, "backgroundColor", Color.TRANSPARENT, Color.parseColor("#33FFC107"), Color.TRANSPARENT
-        )
-        colorAnim.duration = 1000
-        colorAnim.start()
     }
 
     fun setCurrency(currencyCode: String) {
@@ -373,6 +416,16 @@ class AccountingFormController(
         val index = enabledCodes.indexOf(currencyCode)
         if (index >= 0) {
             spCurrency.setSelection(index)
+        }
+    }
+
+    /**
+     * 为视图播放一个简单的高亮动画，向用户展示该项是由 AI 填充的。
+     */
+    private fun playHighlightAnimation(view: View) {
+        ObjectAnimator.ofFloat(view, "alpha", 0.3f, 1.0f).apply {
+            duration = 500
+            start()
         }
     }
 }

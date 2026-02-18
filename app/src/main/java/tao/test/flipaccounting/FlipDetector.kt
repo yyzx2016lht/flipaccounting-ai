@@ -86,7 +86,7 @@ class FlipDetector(
         if (currentFace == Face.DOWN) {
             // 记录手机开始“面朝下”的时刻
             faceDownTime = now
-            Logger.d(ctx, "FlipDetector", "Face DOWN detected. Threshold=$gThreshold")
+            // Logger.d(ctx, "FlipDetector", "Face DOWN detected. Threshold=$gThreshold")
         } else if (currentFace == Face.UP) {
             // 当检测到“面朝上”时，检查之前是否是“面朝下”
             if (lastFace == Face.DOWN) {
@@ -100,10 +100,11 @@ class FlipDetector(
                 }
                 
                 val flipDuration = now - faceDownTime
-                Logger.d(ctx, "FlipDetector", "Flip distance: ${flipDuration}ms. Max allowed: $maxDuration")
+                // Logger.d(ctx, "FlipDetector", "Flip distance: ${flipDuration}ms. Max allowed: $maxDuration")
 
                 // 判断动作快慢：只有翻转过程耗时在设定范围内，且满足防抖时间
                 if (flipDuration < maxDuration && (now - lastTriggerTime > debounceMs)) {
+                    Logger.d(ctx, "FlipDetector", "Flip action triggered! Duration: ${flipDuration}ms")
                     onFlipChange()
                     lastTriggerTime = now
                 }
