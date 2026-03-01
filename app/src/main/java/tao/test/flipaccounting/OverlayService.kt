@@ -27,10 +27,25 @@ class OverlayService : Service() {
     private lateinit var overlayManager: OverlayManager
     private var flipDetector: FlipDetector? = null
 
-
     private var isFlipEnabled = false
     private var isBackTapEnabled = false
 
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    Logger.d(this@OverlayService, "OverlayService", "Screen OFF: Stopping detector")
+                    stopFlipDetection()
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    Logger.d(this@OverlayService, "OverlayService", "Screen ON: Restarting detector")
+                    if (isFlipEnabled) {
+                        startFlipDetection()
+                    }
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -56,7 +71,7 @@ class OverlayService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
         }
-
+        registerReceiver(screenReceiver, filter)
 
         // 初始化状态
         isFlipEnabled = Prefs.isFlipEnabled(this)
@@ -95,13 +110,14 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
-
-
         stopFlipDetection()
-
         overlayManager.removeOverlay()
-
-
+        
+        try {
+            unregisterReceiver(screenReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         super.onDestroy()
     }

@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
@@ -916,6 +917,26 @@ class MainActivity : AppCompatActivity() {
             }
             if (needed.isNotEmpty()) {
                 requestPermissions(needed.toTypedArray(), 100)
+            }
+        }
+        checkBatteryOptimization()
+    }
+
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                AlertDialog.Builder(this)
+                    .setTitle("需要忽略电池优化")
+                    .setMessage("为了保证翻转记账在后台不被系统休眠中断，请允许应用忽略电池优化。")
+                    .setPositiveButton("去设置") { _, _ ->
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
             }
         }
     }

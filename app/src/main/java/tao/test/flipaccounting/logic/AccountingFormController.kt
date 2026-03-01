@@ -255,8 +255,8 @@ class AccountingFormController(
         var remarkStr = etRemark.text.toString()
         
         if (selectedCurrency != "CNY") {
-            val cnyAmount = CurrencyManager.convertToCny(finalMoney, selectedCurrency)
-            val formattedCnyStr = String.format(Locale.US, "%.2f", cnyAmount)
+            val cnyAmountRaw = CurrencyManager.convertToCny(finalMoney, selectedCurrency)
+            val formattedCnyStr = String.format(Locale.US, "%.2f", cnyAmountRaw)
             
             // Append info to remarks: e.g. (10.00 EUR ≈ 78.50 CNY)
             val curInfo = "(${String.format(Locale.US, "%.2f", finalMoney)} $selectedCurrency ≈ $formattedCnyStr CNY)"

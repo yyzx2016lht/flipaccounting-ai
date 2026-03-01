@@ -73,8 +73,8 @@ object CurrencyManager {
         // Rate is "How many units of Currency for 1 CNY".
         // e.g. Rate = 0.56 PLN (for 1 CNY).
         // User spends 10 PLN.
-        // 10 PLN / 0.56 = 17.85 CNY.
-        val rate = rates[currency] ?: return amount // specific fallback? or just 1:1 if unknown
+        // 10 PLN / 0.56 = 17.8571428 CNY.
+        val rate = rates[currency] ?: return amount
         if (rate == 0.0) return amount
         return amount / rate
     }
