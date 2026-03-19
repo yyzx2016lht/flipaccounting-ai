@@ -256,21 +256,207 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 麦克风开关
+        val layoutAsrMode = findViewById<View>(R.id.layout_asr_mode)
         findViewById<SwitchMaterial>(R.id.switch_show_voice).apply {
             isChecked = Prefs.isShowAiVoice(this@MainActivity)
+            layoutAsrMode.visibility = if (isChecked) View.VISIBLE else View.GONE
             setOnCheckedChangeListener { _, isChecked ->
                 Prefs.setShowAiVoice(this@MainActivity, isChecked)
+                layoutAsrMode.visibility = if (isChecked) View.VISIBLE else View.GONE
                 Utils.toast(this@MainActivity, if (isChecked) "已开启语音记账入口" else "已隐藏语音记账入口及权限申请")
             }
         }
 
-        // 多币种开关
+        // ASR引擎选择
+        val asrSubOptions = this@MainActivity.findViewById<android.widget.LinearLayout>(R.id.layout_asr_model_info)
+        val tvAsrModelDesc = this@MainActivity.findViewById<android.widget.TextView>(R.id.tv_asr_model_desc)
+        val btnDeleteModel = this@MainActivity.findViewById<View>(R.id.btn_delete_offline_model)
+
+        findViewById<android.widget.Spinner>(R.id.spinner_asr_mode).apply {
+
+            fun updateModelUi(mode: Int) {
+                asrSubOptions?.visibility = View.VISIBLE
+                if (mode == Prefs.ASR_MODE_WHISPER) {
+                    val isReady = LocalAsrService.isModelReady(this@MainActivity)
+                    if (isReady) {
+                        tvAsrModelDesc?.text = "点击删除模型"
+                        tvAsrModelDesc?.setTextColor(android.graphics.Color.parseColor("#E53935"))
+                        btnDeleteModel?.setOnClickListener {
+                            android.app.AlertDialog.Builder(this@MainActivity)
+                                .setTitle("删除本地模型")
+                                .setMessage("确定要删除下载的阿里 SenseVoice 本地模型文件吗？")
+                                .setPositiveButton("删除") { _, _ ->
+                                    val modelDir = java.io.File(filesDir, "sherpa-onnx-sense-voice")
+                                    if (modelDir.exists() && modelDir.deleteRecursively()) {
+                                        setSelection(Prefs.ASR_MODE_API)
+                                        Prefs.setAsrMode(this@MainActivity, Prefs.ASR_MODE_API)
+                                        updateModelUi(Prefs.ASR_MODE_API)
+                                        Utils.toast(this@MainActivity, "本地模型已删除")
+                                    } else {
+                                        Utils.toast(this@MainActivity, "删除失败或模型不存在")
+                                    }
+                                }
+                                .setNegativeButton("取消", null)
+                                .show()
+                        }
+                    } else {
+                        tvAsrModelDesc?.text = "未下载 (点击下载)"
+                        tvAsrModelDesc?.setTextColor(android.graphics.Color.parseColor("#FF9800"))
+                        btnDeleteModel?.setOnClickListener {
+                            // 当未下载时，手动点击也可以触发下载
+                            android.app.AlertDialog.Builder(this@MainActivity)
+                                .setTitle("需下载本地模型")
+                                .setMessage("是否立即下载大约 45MB 的模型压缩文件（解压后约 145MB）？")
+                                .setCancelable(false)
+                                .setPositiveButton("开始下载") { _, _ ->
+                                    Utils.toast(this@MainActivity, "开始下载 SenseVoice 模型")
+                                    LocalAsrService.downloadModelWithUI(this@MainActivity) {
+                                        updateModelUi(mode)
+                                    }
+                                }
+                                .setNegativeButton("取消", null)
+                                .show()
+                        }
+                    }
+                } else {
+                    tvAsrModelDesc?.text = "云端 (仅需联网)"
+                    tvAsrModelDesc?.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
+                    btnDeleteModel?.setOnClickListener {
+                        Utils.toast(this@MainActivity, "正在使用的是在线 API 服务，无需管理本地模型。")
+                    }
+                }
+            }
+
+            setSelection(Prefs.getAsrMode(this@MainActivity))
+            updateModelUi(Prefs.getAsrMode(this@MainActivity))
+
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    val currentMode = Prefs.getAsrMode(this@MainActivity)
+                    if (currentMode != position) {
+                        if (position == Prefs.ASR_MODE_WHISPER && !LocalAsrService.isModelReady(this@MainActivity)) {
+                            android.app.AlertDialog.Builder(this@MainActivity)
+                                .setTitle("需下载本地模型")
+                                .setMessage("切换为阿里 SenseVoice 本地模式需要下载大约 45MB 的模型压缩文件（解压后约 145MB）。\n\n是否立即下载？")
+                                .setCancelable(false)
+                                .setPositiveButton("开始下载") { _, _ ->
+                                    // 预先更新UI但模式会在成功后才能稳定使用
+                                    Prefs.setAsrMode(this@MainActivity, position)
+                                    updateModelUi(position)
+                                    Utils.toast(this@MainActivity, "开始下载 SenseVoice 模型")
+                                    LocalAsrService.downloadModelWithUI(this@MainActivity) {
+                                        // 下载完成回调
+                                        updateModelUi(position)
+                                    }
+                                }
+                                .setNegativeButton("取消") { _, _ ->
+                                    setSelection(currentMode)
+                                }
+                                .show()
+                        } else {
+                            Prefs.setAsrMode(this@MainActivity, position)
+                            updateModelUi(position)
+                            val modeName = if (position == Prefs.ASR_MODE_WHISPER) "阿里 SenseVoice 本地模式" else "云端 API"
+                            Utils.toast(this@MainActivity, "已切换为 $modeName")
+                        }
+                    }
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+        }
+
+        // 记账多币种开关
         findViewById<SwitchMaterial>(R.id.switch_show_multi_cur).apply {
             isChecked = Prefs.isShowMultiCurrency(this@MainActivity)
             setOnCheckedChangeListener { _, isChecked ->
                 Prefs.setShowMultiCurrency(this@MainActivity, isChecked)
                 Utils.toast(this@MainActivity, if (isChecked) "已开启多币种显示" else "已按单币种显示")
             }
+        }
+
+        // --- 3. 数据管理跳转 ---
+        findViewById<View>(R.id.btn_manage_assets).setOnClickListener {
+            startActivity(Intent(this, AssetActivity::class.java))
+        }
+
+        findViewById<View>(R.id.btn_manage_categories).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        findViewById<View>(R.id.btn_manage_currencies).setOnClickListener {
+            startActivity(Intent(this, tao.test.flipaccounting.ui.CurrencyManagerActivity::class.java))
+        }
+
+        findViewById<View>(R.id.btn_backup_restore).setOnClickListener {
+            startActivity(Intent(this, BackupActivity::class.java))
+        }
+
+        findViewById<View>(R.id.btn_manage_whitelist).setOnClickListener {
+            if (!Shizuku.pingBinder()) {
+                Utils.toast(this, "请先启动 Shizuku 并授权")
+                return@setOnClickListener
+            }
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                Shizuku.requestPermission(101)
+            } else {
+                startActivity(Intent(this, AppListActivity::class.java))
+            }
+        }
+
+        findViewById<View>(R.id.btn_flip_sensitivity).setOnClickListener {
+            startActivity(Intent(this, FlipSensitivityActivity::class.java))
+        }
+
+        // Prompt 调试跳转 (或直接弹出 Dialog)
+        findViewById<View>(R.id.btn_prompt_debug).setOnClickListener {
+            val assets = tao.test.flipaccounting.Prefs.getAssets(this).map { it.name }
+            
+            val expenseCats = mutableListOf<String>()
+            tao.test.flipaccounting.Prefs.getCategories(this, tao.test.flipaccounting.Prefs.TYPE_EXPENSE).forEach { parentNode ->
+                if (parentNode.subs.isEmpty()) {
+                    expenseCats.add(parentNode.name)
+                } else {
+                    parentNode.subs.forEach { childNode ->
+                        expenseCats.add("${parentNode.name}/::/${childNode.name}")
+                    }
+                }
+            }
+            
+            val incomeCats = mutableListOf<String>()
+            tao.test.flipaccounting.Prefs.getCategories(this, tao.test.flipaccounting.Prefs.TYPE_INCOME).forEach { parentNode ->
+                if (parentNode.subs.isEmpty()) {
+                    incomeCats.add(parentNode.name)
+                } else {
+                    parentNode.subs.forEach { childNode ->
+                        incomeCats.add("${parentNode.name}/::/${childNode.name}")
+                    }
+                }
+            }
+            
+            val now = java.util.Date()
+            val timeFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            val weekFormat = java.text.SimpleDateFormat("EEEE", java.util.Locale.getDefault())
+            val currentTimeStr = "${timeFormat.format(now)} (${weekFormat.format(now)})"
+
+            val gson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
+            
+            val msg = buildString {
+                append("【TIME】\n").append(currentTimeStr).append("\n\n")
+                append("【ASSETS】\n").append(gson.toJson(assets)).append("\n\n")
+                append("【EXPENSE_CATS】\n").append(gson.toJson(expenseCats)).append("\n\n")
+                append("【INCOME_CATS】\n").append(gson.toJson(incomeCats))
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("当前 Prompt 数据源")
+                .setMessage(msg)
+                .setPositiveButton("复制") { _, _ ->
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("prompt_data", msg))
+                    tao.test.flipaccounting.Utils.toast(this, "已复制到剪贴板")
+                }
+                .setNegativeButton("关闭", null)
+                .show()
         }
 
         // --- 3. 数据管理跳转 ---

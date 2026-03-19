@@ -26,6 +26,9 @@ class AiAssistant(private val ctx: Context) {
     private var tvThinkingLog: TextView? = null
     private var tvRecordedTextPreview: TextView? = null
 
+    // 用于外部绑定麦克风按钮的手势
+    var voiceInputBtnSetup: ((View) -> Unit)? = null
+
     companion object {
         const val MODE_INPUT = 0      // 纯文本输入模式
         const val MODE_RECORDING = 1  // 录音中模式
@@ -45,13 +48,11 @@ class AiAssistant(private val ctx: Context) {
         isMultiMode: Boolean? = null, // [新增]
         onResult: (JSONObject) -> Unit
     ) {
+        val finalMode = if (mode == MODE_LOADING && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") MODE_INPUT else mode
+
         // 如果弹窗已存在，直接复用，避免闪烁
         if (currentDialog?.isShowing == true) {
-            updatePanelState(mode, defaultText)
-            // 如果是 Loading 模式且有文字，说明语音转写完成了，触发分析
-            if (mode == MODE_LOADING && !defaultText.isNullOrEmpty()) {
-                startAnalysis(defaultText, isMultiMode, onResult)
-            }
+            updatePanelState(finalMode, defaultText)
             return
         }
 
@@ -144,21 +145,30 @@ class AiAssistant(private val ctx: Context) {
         // 绑定关闭事件
         btnClose.setOnClickListener { dismiss() }
 
+        // 绑定内部麦克风按钮（若存在）
+        val btnDialogVoice = view.findViewById<View>(R.id.btn_dialog_voice)
+        if (btnDialogVoice != null) {
+            voiceInputBtnSetup?.invoke(btnDialogVoice)
+        }
+
         // 绑定“开始分析”按钮事件
         btnIdentify.setOnClickListener {
             val text = etInput.text.toString().trim()
             if (text.isNotEmpty()) {
                 updatePanelState(MODE_LOADING, "正在分析语义...")
                 startAnalysis(text, isMultiMode, onResult)
+            } else {
+                Utils.toast(ctx, "请输入记账内容")
             }
         }
 
         // --- 初始状态设置 ---
-        updatePanelState(mode, defaultText)
+        updatePanelState(finalMode, defaultText)
 
-        // 如果是输入模式且带文字 (比如重试)
-        if (mode == MODE_INPUT && !defaultText.isNullOrEmpty()) {
+        // 如果是输入模式且带文字 (比如重试，或语音识别完毕转入编辑)
+        if (finalMode == MODE_INPUT && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") {
             etInput.setText(defaultText)
+            etInput.setSelection(defaultText.length)
         }
     }
 
@@ -181,14 +191,21 @@ class AiAssistant(private val ctx: Context) {
                 layoutResult.visibility = View.GONE
                 dialog.setCancelable(true)
                 btnClose.visibility = View.VISIBLE
+                if (!text.isNullOrEmpty() && text != "正在解析语音...") {
+                    val etInput = layoutInput.findViewById<EditText>(R.id.et_ai_input)
+                    if (etInput != null) {
+                        etInput.setText(text)
+                        etInput.setSelection(text.length)
+                    }
+                }
             }
             MODE_RECORDING -> {
                 layoutInput.visibility = View.GONE
                 layoutLoading.visibility = View.VISIBLE
                 layoutResult.visibility = View.GONE
-                tvThinkingLog?.text = "正在倾听..."
+                tvThinkingLog?.text = if (!text.isNullOrEmpty()) "正在听：$text" else "倾听中..."
                 tvThinkingLog?.setTextColor(android.graphics.Color.parseColor("#7B61FF"))
-                tvRecordedTextPreview?.visibility = View.GONE // 录音时不显示预览
+                tvRecordedTextPreview?.visibility = View.GONE // 隐藏预览因为已经放在thinking里
                 dialog.setCancelable(false)
                 btnClose.visibility = View.GONE
             }
@@ -207,13 +224,10 @@ class AiAssistant(private val ctx: Context) {
                 layoutLoading.visibility = View.VISIBLE
                 layoutResult.visibility = View.GONE
                 tvThinkingLog?.setTextColor(android.graphics.Color.parseColor("#7B61FF"))
-                if (!text.isNullOrEmpty() && text != "正在分析语义...") {
-                    tvThinkingLog?.text = "正在分析..."
-                    tvRecordedTextPreview?.visibility = View.VISIBLE
-                    tvRecordedTextPreview?.text = text
-                } else {
-                    tvThinkingLog?.text = text ?: "正在处理..."
-                }
+                
+                // 因为语音结果会直接转 MODE_INPUT，这里只负责显示 loading 的提示词
+                tvThinkingLog?.text = text ?: "正在处理..."
+                tvRecordedTextPreview?.visibility = View.GONE
 
                 dialog.setCancelable(false)
                 btnClose.visibility = View.GONE
@@ -268,7 +282,7 @@ class AiAssistant(private val ctx: Context) {
             if (count > 0) {
                 val first = bills.getJSONObject(0)
                 val amt = first.optDouble("amount", 0.0)
-                val cat = first.optString("category_name", "").replace("/::/", " > ")
+                val cat = first.optString("category_name", "").replace("/:::/", " > ")
                 tvResCate.text = "首笔: $cat ($amt)"
                 tvResAsset.text = "点击确认后将依次处理"
             }
@@ -307,7 +321,7 @@ class AiAssistant(private val ctx: Context) {
                 }
                 else -> { // 支出、收入
                     val cat = result.optString("category_name", "--")
-                    tvResCate.text = "分类: ${cat.replace("/::/", " > ")}"
+                    tvResCate.text = "分类: ${cat.replace("/:::/", " > ")}"
                     val assetName = result.optString("asset_name", "")
                     tvResAsset.text = "账户: ${if (assetName.isEmpty()) "未识别" else assetName}"
                 }
@@ -329,5 +343,12 @@ class AiAssistant(private val ctx: Context) {
     fun dismiss() {
         currentDialog?.dismiss()
         currentDialog = null
+    }
+
+    fun getCurrentInputText(): String {
+        val dialog = currentDialog ?: return ""
+        val view = dialog.findViewById<View>(android.R.id.content) ?: return ""
+        val etInput = view.findViewById<EditText>(R.id.et_ai_input) ?: return ""
+        return etInput.text.toString()
     }
 }

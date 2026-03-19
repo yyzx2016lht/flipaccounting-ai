@@ -31,126 +31,168 @@ class OverlayService : Service() {
     private var isFlipEnabled = false
     private var isBackTapEnabled = false
 
-    private var watchdogJob: Job? = null
-    private var restartDetectorJob: Job? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var permanentWakeLock: PowerManager.WakeLock? = null
+    private val keepAliveManager = KeepAliveManager()
 
-    private fun acquireWakeLockAwhile() {
-        try {
-            if (wakeLock == null) {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FlipAccounting::SensorWatchdogWL")
-            }
-            wakeLock?.acquire(3000L) // 借用3秒CPU时间，确保不会刚开始注册就又休眠
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
+    // --- 保活与健康检测机制 (KeepAlive & Watchdog) ---
+    private inner class KeepAliveManager {
+        private var watchdogJob: Job? = null
+        private var restartDetectorJob: Job? = null
+        private var wakeLock: PowerManager.WakeLock? = null
+        private var permanentWakeLock: PowerManager.WakeLock? = null
 
-    private fun acquirePermanentWakeLock() {
-        if (!Prefs.isPermanentWakeLockEnabled(this)) return
-        
-        try {
-            if (permanentWakeLock == null) {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                permanentWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FlipAccounting::AggressivePermanentWL")
-            }
-            if (permanentWakeLock?.isHeld != true) {
-                permanentWakeLock?.acquire()
-                Logger.d(this, "OverlayService", "☢️ Aggressive: Permanent WakeLock Acquired! CPU forced awake.")
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun releasePermanentWakeLock() {
-        try {
-            if (permanentWakeLock?.isHeld == true) {
-                permanentWakeLock?.release()
-                Logger.d(this, "OverlayService", "☢️ Aggressive: Permanent WakeLock Released!")
-            }
-        } catch (e: Exception) {}
-        permanentWakeLock = null
-    }
-
-    private fun startWatchdog() {
-        if (watchdogJob == null) {
-            watchdogJob = CoroutineScope(Dispatchers.Default).launch {
-                while (isActive) {
-                    delay(15_000)
-                    checkSensorHealth()
-                }
-            }
-            Logger.d(this, "OverlayService", "Watchdog (Coroutine) started: will monitor sensor health every 15s")
-        }
-    }
-
-    private fun stopWatchdog() {
-        watchdogJob?.cancel()
-        watchdogJob = null
-        try {
-            if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
-            }
-        } catch (e: Exception) {}
-        Logger.d(this, "OverlayService", "Watchdog (Coroutine) stopped")
-    }
-
-    private fun checkSensorHealth() {
-        if (!isFlipEnabled) return
-        
-        // 如果目前是息屏状态，不强制唤醒传感器，防止耗电
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) pm.isInteractive else pm.isScreenOn
-        if (!isScreenOn) return 
-        
-        val detector = flipDetector
-        if (detector == null) {
-            Logger.d(this, "OverlayService", "Watchdog Alert: Detector is null, but switch is ON! Force restarting...")
-            acquireWakeLockAwhile()
-            restartFlipDetector()
-            return
-        }
-        
-        val now = System.currentTimeMillis()
-        val timeSinceLastEvent = now - detector.lastSensorEventTimeMillis
-        
-        // 如果超过 20 秒没有收到传感器数据，判定假死（针对各大国产OS激进杀后台问题）
-        if (timeSinceLastEvent > 20_000) {
-            Logger.d(this, "OverlayService", "Watchdog Alert: Sensor seems dead! (No events for ${timeSinceLastEvent}ms). Force restarting...")
-            acquireWakeLockAwhile()
-            restartFlipDetector()
-        }
-    }
-
-    private fun restartFlipDetector() {
-        restartDetectorJob?.cancel()
-        restartDetectorJob = CoroutineScope(Dispatchers.Main).launch {
-            delay(500)
-            stopFlipDetection()
-            delay(200) // Give SensorService a tiny bit of time to clear resources
-            if (isFlipEnabled) {
-                startFlipDetection()
-            }
-        }
-    }
-
-    private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Intent.ACTION_SCREEN_OFF -> {
-                    Logger.d(this@OverlayService, "OverlayService", "Screen OFF: Stopping detector")
-                    restartDetectorJob?.cancel()
-                    stopFlipDetection()
-                }
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
-                    Logger.d(this@OverlayService, "OverlayService", "Screen ON/Unlock: Restarting detector (${intent.action})")
-                    if (isFlipEnabled) {
-                        acquireWakeLockAwhile()
-                        restartFlipDetector()
+        private val screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        Logger.d(this@OverlayService, "OverlayService", "Screen OFF: Stopping detector")
+                        restartDetectorJob?.cancel()
+                        stopFlipDetection()
                     }
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                        Logger.d(this@OverlayService, "OverlayService", "Screen ON/Unlock: Restarting detector (${intent.action})")
+                        if (isFlipEnabled) {
+                            acquireWakeLockAwhile()
+                            restartFlipDetector()
+                        }
+                    }
+                }
+            }
+        }
+
+        fun attach() {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            // 适配 Android 14+ 要求的明确导向，否则会报 SecurityException 导致服务死循环重启失败
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(screenReceiver, filter, Context.RECEIVER_EXPORTED)
+                } else {
+                    registerReceiver(screenReceiver, filter)
+                }
+            } catch (e: Exception) {
+                Logger.d(this@OverlayService, "OverlayService", "🚨 registerReceiver Error: ${e.message}")
+                try { registerReceiver(screenReceiver, filter) } catch (ignore: Exception) {}
+            }
+
+            // 毒瘤模式接管：只要系统给了Shizuku权限，直接把本应用从一切省电和后台限制中强行解除
+            if (Prefs.isShizukuPersistenceEnabled(this@OverlayService)) {
+                Logger.d(this@OverlayService, "OverlayService", "Applying Shizuku Aggressive Persistence")
+                ShizukuShell.applyAggressivePersistence(packageName)
+            } else {
+                Logger.d(this@OverlayService, "OverlayService", "Shizuku Persistence is disabled by user.")
+            }
+        }
+
+        fun detach() {
+            restartDetectorJob?.cancel()
+            stopWatchdog()
+            try {
+                unregisterReceiver(screenReceiver)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        fun acquireWakeLockAwhile() {
+            try {
+                if (wakeLock == null) {
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FlipAccounting::SensorWatchdogWL")
+                }
+                wakeLock?.acquire(3000L) // 借用3秒CPU时间，确保不会刚开始注册就又休眠
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        fun acquirePermanentWakeLock() {
+            if (!Prefs.isPermanentWakeLockEnabled(this@OverlayService)) return
+            
+            try {
+                if (permanentWakeLock == null) {
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    permanentWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FlipAccounting::AggressivePermanentWL")
+                }
+                if (permanentWakeLock?.isHeld != true) {
+                    permanentWakeLock?.acquire()
+                    Logger.d(this@OverlayService, "OverlayService", "☢️ Aggressive: Permanent WakeLock Acquired! CPU forced awake.")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        fun releasePermanentWakeLock() {
+            try {
+                if (permanentWakeLock?.isHeld == true) {
+                    permanentWakeLock?.release()
+                    Logger.d(this@OverlayService, "OverlayService", "☢️ Aggressive: Permanent WakeLock Released!")
+                }
+            } catch (e: Exception) {}
+            permanentWakeLock = null
+        }
+
+        fun startWatchdog() {
+            if (watchdogJob == null) {
+                watchdogJob = CoroutineScope(Dispatchers.Default).launch {
+                    while (isActive) {
+                        delay(15_000)
+                        checkSensorHealth()
+                    }
+                }
+                Logger.d(this@OverlayService, "OverlayService", "Watchdog (Coroutine) started: will monitor sensor health every 15s")
+            }
+        }
+
+        private fun stopWatchdog() {
+            watchdogJob?.cancel()
+            watchdogJob = null
+            try {
+                if (wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                }
+            } catch (e: Exception) {}
+            Logger.d(this@OverlayService, "OverlayService", "Watchdog (Coroutine) stopped")
+        }
+
+        private fun checkSensorHealth() {
+            if (!isFlipEnabled) return
+            
+            // 如果目前是息屏状态，不强制唤醒传感器，防止耗电
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) pm.isInteractive else pm.isScreenOn
+            if (!isScreenOn) return 
+            
+            val detector = flipDetector
+            if (detector == null) {
+                Logger.d(this@OverlayService, "OverlayService", "Watchdog Alert: Detector is null, but switch is ON! Force restarting...")
+                acquireWakeLockAwhile()
+                restartFlipDetector()
+                return
+            }
+            
+            val now = System.currentTimeMillis()
+            val timeSinceLastEvent = now - detector.lastSensorEventTimeMillis
+            
+            // 如果超过 20 秒没有收到传感器数据，判定假死（针对各大国产OS激进杀后台问题）
+            if (timeSinceLastEvent > 20_000) {
+                Logger.d(this@OverlayService, "OverlayService", "Watchdog Alert: Sensor seems dead! (No events for ${timeSinceLastEvent}ms). Force restarting...")
+                acquireWakeLockAwhile()
+                restartFlipDetector()
+            }
+        }
+
+        private fun restartFlipDetector() {
+            restartDetectorJob?.cancel()
+            restartDetectorJob = CoroutineScope(Dispatchers.Main).launch {
+                delay(500)
+                stopFlipDetection()
+                delay(200) // Give SensorService a tiny bit of time to clear resources
+                if (isFlipEnabled) {
+                    startFlipDetection()
                 }
             }
         }
@@ -181,38 +223,14 @@ class OverlayService : Service() {
                 Logger.d(this, "OverlayService", "🚨 startForeground Error: ${e.message}")
             }
 
-            val filter = IntentFilter().apply {
-                addAction(Intent.ACTION_SCREEN_OFF)
-                addAction(Intent.ACTION_SCREEN_ON)
-                addAction(Intent.ACTION_USER_PRESENT)
-            }
-            // 适配 Android 14+ 要求的明确导向，否则会报 SecurityException 导致服务死循环重启失败
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    registerReceiver(screenReceiver, filter, Context.RECEIVER_EXPORTED)
-                } else {
-                    registerReceiver(screenReceiver, filter)
-                }
-            } catch (e: Exception) {
-                Logger.d(this, "OverlayService", "🚨 registerReceiver Error: ${e.message}")
-                try { registerReceiver(screenReceiver, filter) } catch (ignore: Exception) {}
-            }
-
             // 初始化状态
             isFlipEnabled = Prefs.isFlipEnabled(this)
 
             if (isFlipEnabled) startFlipDetection()
 
-            // 启动健康检测狗
-            startWatchdog()
-            
-            // 毒瘤模式接管：只要系统给了Shizuku权限，直接把本应用从一切省电和后台限制中强行解除
-            if (Prefs.isShizukuPersistenceEnabled(this)) {
-                Logger.d(this, "OverlayService", "Applying Shizuku Aggressive Persistence")
-                ShizukuShell.applyAggressivePersistence(packageName)
-            } else {
-                Logger.d(this, "OverlayService", "Shizuku Persistence is disabled by user.")
-            }
+            // 挂载保活与健康检测模块
+            keepAliveManager.attach()
+            keepAliveManager.startWatchdog()
             
             Logger.d(this, "OverlayService", "Service onCreate sequence completed.")
         } catch (e: Exception) {
@@ -249,23 +267,16 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
-        restartDetectorJob?.cancel()
-        stopWatchdog()
+        keepAliveManager.detach()
         stopFlipDetection()
         overlayManager.removeOverlay()
         
-        try {
-            unregisterReceiver(screenReceiver)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
         super.onDestroy()
     }
 
     // --- 核心逻辑：统一检查白名单 ---
     private fun checkAndShowOverlay() {
-        acquireWakeLockAwhile() // 弹出UI前确保CPU处于唤醒状态，特别是强制回到Main Looper时防止卡死
+        keepAliveManager.acquireWakeLockAwhile() // 弹出UI前确保CPU处于唤醒状态，特别是强制回到Main Looper时防止卡死
 
         // 全局感应逻辑处理
         if (Prefs.isFlipAlways(this)) {
@@ -334,7 +345,7 @@ class OverlayService : Service() {
             flipDetector = null
         } else {
             // 超级毒瘤：如果传感器启动成功，我们强行霸占永久唤醒锁
-            acquirePermanentWakeLock()
+            keepAliveManager.acquirePermanentWakeLock()
         }
     }
 
@@ -342,7 +353,7 @@ class OverlayService : Service() {
         Logger.d(this, "OverlayService", "Stopping FlipDetector")
         flipDetector?.stop()
         flipDetector = null
-        releasePermanentWakeLock()
+        keepAliveManager.releasePermanentWakeLock()
     }
 
 

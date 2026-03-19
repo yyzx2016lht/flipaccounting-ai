@@ -27,6 +27,7 @@ class OverlayManager(private val ctx: Context) {
     private val aiAssistant = AiAssistant(ctx)
     private var formController: AccountingFormController? = null
     private var currentQueueShowSaveOnly = false // 保存当前队列是否展示“仅保存”按钮
+    private var voiceHandler: tao.test.flipaccounting.logic.VoiceInputHandler? = null
 
     fun isShowing(): Boolean = overlayView != null
 
@@ -160,8 +161,11 @@ class OverlayManager(private val ctx: Context) {
         formController?.showSaveOnlyButton(showSaveOnly)
 
         // Initialize Voice Handler
-        val voiceHandler = VoiceInputHandler(ctx, aiAssistant, { floatingMultiBillMode }, handleAiResult)
-        voiceHandler.setupVoiceButton(formController!!.btnVoice)
+        voiceHandler = tao.test.flipaccounting.logic.VoiceInputHandler(ctx, aiAssistant, { floatingMultiBillMode }, handleAiResult)
+        aiAssistant.voiceInputBtnSetup = { btn ->
+            voiceHandler?.setupVoiceButton(btn)
+        }
+        voiceHandler?.setupVoiceButton(formController!!.btnVoice)
 
         // Initialize AI Entry Click (Text input)
         formController!!.layoutAiEntry.setOnClickListener {
@@ -221,6 +225,8 @@ class OverlayManager(private val ctx: Context) {
     }
 
     fun removeOverlay(isSaved: Boolean = true) {
+        voiceHandler?.release()
+        voiceHandler = null
         if (overlayView != null) {
             Logger.d(ctx, "OverlayManager", "Removing Overlay")
             windowManager?.removeView(overlayView)

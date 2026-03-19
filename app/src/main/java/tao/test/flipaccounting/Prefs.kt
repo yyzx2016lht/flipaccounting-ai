@@ -70,6 +70,11 @@ object Prefs {
     private const val KEY_PERMANENT_WAKELOCK = "advanced_permanent_wakelock" // [新增] 永驻唤醒锁
     private const val KEY_SHIZUKU_PERSISTENCE = "advanced_shizuku_persistence" // [新增] Shizuku毒瘤保活
     private const val KEY_VIBRATE_FEEDBACK = "vibrate_feedback" // [新增] 弹窗震动反馈
+    
+    private const val KEY_ASR_MODE = "asr_engine_mode" // [新增] 0: API, 1: Whisper 本地
+
+    const val ASR_MODE_API = 0
+    const val ASR_MODE_WHISPER = 1
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -101,6 +106,9 @@ object Prefs {
 
     fun isLoggingEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_LOGGING_ENABLED, false)
     fun setLoggingEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_LOGGING_ENABLED, enabled).apply()
+
+    fun getAsrMode(ctx: Context): Int = prefs(ctx).getInt(KEY_ASR_MODE, ASR_MODE_API)
+    fun setAsrMode(ctx: Context, mode: Int) = prefs(ctx).edit().putInt(KEY_ASR_MODE, mode).apply()
 
     // --- AI 配置 ---
     fun getAiKey(ctx: Context): String = prefs(ctx).getString(KEY_AI_KEY, "") ?: ""

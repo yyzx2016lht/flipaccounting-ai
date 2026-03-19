@@ -27,9 +27,14 @@ class AddAssetActivity : AppCompatActivity() {
     private var lastAutoFilledName: String = ""
 
     inner class IconPickerAdapter(
-        private val icons: List<BuiltInCategory>,
+        private var icons: List<BuiltInCategory>,
         private val onSelect: (BuiltInCategory) -> Unit
     ) : RecyclerView.Adapter<IconPickerAdapter.VH>() {
+
+        fun updateList(newList: List<BuiltInCategory>) {
+            icons = newList
+            notifyDataSetChanged()
+        }
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
             val iv: ImageView = v.findViewById(R.id.iv_asset_icon)
@@ -61,6 +66,7 @@ class AddAssetActivity : AppCompatActivity() {
         val spType = findViewById<Spinner>(R.id.sp_type)
         val spCurrency = findViewById<Spinner>(R.id.sp_currency)
         val rvIcons = findViewById<RecyclerView>(R.id.rv_icon_list)
+        val etSearch = findViewById<EditText>(R.id.et_search)
 
         findViewById<View>(R.id.btn_back).setOnClickListener { finish() }
 
@@ -69,7 +75,7 @@ class AddAssetActivity : AppCompatActivity() {
 
         // 2. 设置下方图标列表
         rvIcons.layoutManager = GridLayoutManager(this, 5)
-        rvIcons.adapter = IconPickerAdapter(builtInIcons) { selected ->
+        val adapter = IconPickerAdapter(builtInIcons) { selected ->
             selectedIconUrl = selected.icon
             Glide.with(this).load(selected.icon).transform(CircleCrop()).into(ivPreview)
 
@@ -81,8 +87,56 @@ class AddAssetActivity : AppCompatActivity() {
                 lastAutoFilledName = selected.name
             }
         }
+        rvIcons.adapter = adapter
 
-        // 3. 货币选择逻辑（含自定义功能）
+        if (etSearch != null) {
+            etSearch.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    val keyword = s.toString().trim()
+                    val filtered = if (keyword.isEmpty()) builtInIcons else builtInIcons.filter { it.name.contains(keyword, ignoreCase = true) }
+                    adapter.updateList(filtered)
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+        }
+
+        // 3. 货币初始列表设置逻辑（优先拉取多币种中启用的数据，加上现有资产所使用的）
+        val combinedCurrencies = mutableListOf<String>()
+        val enabledCodes = tao.test.flipaccounting.logic.CurrencyManager.getEnabledCurrencies(this).toMutableList()
+        // 保证 CNY 永远在第一位，方便默认选中
+        enabledCodes.remove("CNY")
+        enabledCodes.add(0, "CNY")
+
+        // 把启用的多币种加进去
+        for (code in enabledCodes) {
+            val info = CurrencyData.getInfo(code)
+            if (info != null) {
+                combinedCurrencies.add("${info.code} - ${info.nameZh}")
+            } else {
+                combinedCurrencies.add("$code - 自定义")
+            }
+        }
+
+        // 把现有资产里的一些特殊货币也加入，不遗漏
+        val existingAssets = Prefs.getAssets(this)
+        existingAssets.map { it.currency }.distinct().forEach { code ->
+            if (!enabledCodes.contains(code)) {
+                val info = CurrencyData.getInfo(code)
+                val display = if (info != null) "${info.code} - ${info.nameZh}" else "$code - 自定义"
+                if (!combinedCurrencies.contains(display)) {
+                    combinedCurrencies.add(display)
+                }
+            }
+        }
+
+        combinedCurrencies.add("自定义")
+
+        val currencyAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, combinedCurrencies)
+        currencyAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spCurrency.adapter = currencyAdapter
+
+        // 4. 货币选择逻辑（含自定义功能）
         spCurrency.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selected = parent?.getItemAtPosition(position).toString()
