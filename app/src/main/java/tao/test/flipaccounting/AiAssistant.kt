@@ -48,11 +48,15 @@ class AiAssistant(private val ctx: Context) {
         isMultiMode: Boolean? = null, // [新增]
         onResult: (JSONObject) -> Unit
     ) {
-        val finalMode = if (mode == MODE_LOADING && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") MODE_INPUT else mode
+        val finalMode = mode
 
         // 如果弹窗已存在，直接复用，避免闪烁
         if (currentDialog?.isShowing == true) {
             updatePanelState(finalMode, defaultText)
+            // 如果是 Loading 模式且有文字且不是默认提示语，说明语音转写完成了，触发分析
+            if (finalMode == MODE_LOADING && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") {
+                startAnalysis(defaultText, isMultiMode, onResult)
+            }
             return
         }
 
@@ -169,6 +173,8 @@ class AiAssistant(private val ctx: Context) {
         if (finalMode == MODE_INPUT && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") {
             etInput.setText(defaultText)
             etInput.setSelection(defaultText.length)
+        } else if (finalMode == MODE_LOADING && !defaultText.isNullOrEmpty() && defaultText != "正在解析语音...") {
+            startAnalysis(defaultText, isMultiMode, onResult)
         }
     }
 

@@ -1073,19 +1073,34 @@ class MainActivity : AppCompatActivity() {
             btnTest.isEnabled = false
 
             CoroutineScope(Dispatchers.IO).launch {
-                val models = AIService.fetchModels(this@MainActivity, key)
-                withContext(Dispatchers.Main) {
-                    btnTest.isEnabled = true
-                    btnTest.text = "测试连接并获取模型"
+                try {
+                    val models = AIService.fetchModels(this@MainActivity, key)
+                    withContext(Dispatchers.Main) {
+                        btnTest.isEnabled = true
+                        btnTest.text = "测试连接并获取模型"
 
-                    if (models.isNotEmpty()) {
-                        Utils.toast(this@MainActivity, "连接成功！获取到 ${models.size} 个模型")
-                        val newAdapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, models)
-                        spinnerModels.adapter = newAdapter
-                        val idx = models.indexOf(currentModel)
-                        if (idx >= 0) spinnerModels.setSelection(idx)
-                    } else {
-                        Utils.toast(this@MainActivity, "连接失败，请检查令牌或网络")
+                        if (models.isNotEmpty()) {
+                            Utils.toast(this@MainActivity, "连接成功！获取到 ${models.size} 个模型")
+                            val newAdapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, models)
+                            spinnerModels.adapter = newAdapter
+                            val idx = models.indexOf(currentModel)
+                            if (idx >= 0) spinnerModels.setSelection(idx)
+                        } else {
+                            Utils.toast(this@MainActivity, "成功连通服务器，但在该账号下未找到任何可用模型")
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        btnTest.isEnabled = true
+                        btnTest.text = "测试连接并获取模型"
+                        val errMsg = e.message ?: ""
+                        if (errMsg.contains("timeout") || errMsg.contains("Failed to connect") || errMsg.contains("Unable to resolve host")) {
+                            Utils.toast(this@MainActivity, "连接超时，请检查网络或确认 URL 是否正确（确保是以 http 开头）")
+                        } else if (errMsg.contains("401")) {
+                            Utils.toast(this@MainActivity, "连接被拒绝: API 令牌 (Key) 错误或已过期")
+                        } else {
+                            Utils.toast(this@MainActivity, "请求失败 (${e.javaClass.simpleName}): $errMsg")
+                        }
                     }
                 }
             }

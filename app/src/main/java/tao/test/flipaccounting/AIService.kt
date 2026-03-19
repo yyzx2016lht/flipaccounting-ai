@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.ResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.Retrofit
@@ -22,7 +23,7 @@ import java.util.concurrent.TimeUnit
 data class ChatRequest(
     val model: String,
     val messages: List<Message>,
-    val temperature: Double = 0.0,
+    val temperature: Double = 0.3,
     val response_format: ResponseFormat? = ResponseFormat("json_object")
 )
 
@@ -32,10 +33,13 @@ data class ChatResponse(val choices: List<Choice>)
 data class Choice(val message: Message)
 data class AudioResponse(val text: String)
 
+data class ModelsResponse(val data: List<ModelItem>)
+data class ModelItem(val id: String)
+
 // --- API 接口 ---
 interface SiliconFlowApi {
     @GET("v1/models")
-    suspend fun getModels(@Header("Authorization") auth: String): JsonObject
+    suspend fun getModels(@Header("Authorization") auth: String): ModelsResponse
 
     @POST("v1/chat/completions")
     suspend fun chat(@Header("Authorization") auth: String, @Body body: ChatRequest): ChatResponse
@@ -107,8 +111,16 @@ JSON 结构示例：
         if (!baseUrl.endsWith("/")) {
             baseUrl += "/"
         }
+        
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+            
         return Retrofit.Builder()
             .baseUrl(baseUrl)
+            .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(SiliconFlowApi::class.java)
@@ -298,10 +310,10 @@ JSON 结构示例：
     suspend fun fetchModels(ctx: Context, apiKey: String): List<String> {
         return try {
             val response = getApi(ctx).getModels("Bearer $apiKey")
-            val data = response.getAsJsonArray("data")
-            data.map { it.asJsonObject.get("id").asString }.sorted()
+            response.data.map { it.id }.sorted()
         } catch (e: Exception) {
-            emptyList()
+            e.printStackTrace()
+            throw e
         }
     }
 }
