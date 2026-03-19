@@ -25,11 +25,17 @@ class LogViewerActivity : AppCompatActivity() {
 
         val tvContent = findViewById<TextView>(R.id.tv_log_content)
         val btnShare = findViewById<TextView>(R.id.btn_share_in_viewer)
+        val btnClear = findViewById<TextView>(R.id.btn_clear_in_viewer)
 
         loadLogs(tvContent)
 
         btnShare.setOnClickListener {
             shareLogs()
+        }
+        
+        btnClear.setOnClickListener {
+            Logger.clearLogs(this)
+            loadLogs(tvContent)
         }
     }
 
@@ -37,7 +43,16 @@ class LogViewerActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val logFile = Logger.getLogFile(this@LogViewerActivity)
             val content = if (logFile.exists()) {
-                logFile.readText()
+                try {
+                    val lines = logFile.readLines()
+                    if (lines.isEmpty()) {
+                        "尚无日志记录"
+                    } else {
+                        lines.reversed().joinToString("\n")
+                    }
+                } catch (e: Exception) {
+                    "读取日志失败: ${e.message}"
+                }
             } else {
                 "尚无日志记录"
             }

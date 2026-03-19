@@ -35,4 +35,25 @@ object ShizukuShell {
             .mapNotNull { line -> regex.find(line)?.groupValues?.get(1) }
             .firstOrNull { it.contains('.') && it != "android" }
     }
+
+    /**
+     * 赋予极其暴力的毒瘤保活策略
+     */
+    fun applyAggressivePersistence(pkg: String) {
+        if (!Shizuku.pingBinder()) return
+        Thread {
+            try {
+                exec("dumpsys deviceidle whitelist +$pkg")
+                exec("am set-standby-bucket $pkg active")
+                exec("cmd appops set $pkg RUN_IN_BACKGROUND allow")
+                exec("cmd appops set $pkg RUN_ANY_IN_BACKGROUND allow")  
+                exec("cmd appops set $pkg WAKE_LOCK allow")
+                exec("cmd appops set $pkg SYSTEM_ALERT_WINDOW allow")
+                // 关闭 Android 12+ 幽灵进程杀手（如果系统支持）
+                exec("device_config put activity_manager max_phantom_processes 2147483647")
+            } catch (e: Exception) {
+                android.util.Log.e("ShizukuShell", "保活执行异常: ${e.message}")
+            }
+        }.start()
+    }
 }

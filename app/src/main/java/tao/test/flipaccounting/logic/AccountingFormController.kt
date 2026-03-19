@@ -174,15 +174,17 @@ class AccountingFormController(
         val assetNames = assets.map { it.name }
 
         layoutAccount.setOnClickListener { anchor ->
-            if (assetNames.isNotEmpty()) OverlayDialogs.showAnchoredMenu(ctx, anchor, assetNames) { tvAccount.text = it }
-            else Utils.toast(ctx, "请先在App内添加资产")
+            if (assetNames.isNotEmpty()) {
+                val title = if (spType.selectedItemPosition == 2) "选择转出账户" else if (spType.selectedItemPosition == 3) "选择付款账户" else "选择资产"
+                OverlayDialogs.showGridAssetPicker(ctx, tvAccount.text.toString(), title) { tvAccount.text = it }
+            } else Utils.toast(ctx, "请先在App内添加资产")
         }
-
         layoutAccount2.setOnClickListener { anchor ->
-            if (assetNames.isNotEmpty()) OverlayDialogs.showAnchoredMenu(ctx, anchor, assetNames) { tvAccount2.text = it }
-            else Utils.toast(ctx, "请先在App内添加资产")
+            if (assetNames.isNotEmpty()) {
+                val title = if (spType.selectedItemPosition == 2) "转入账户" else "还款账户(信用卡)"
+                OverlayDialogs.showGridAssetPicker(ctx, tvAccount2.text.toString(), title) { tvAccount2.text = it }
+            } else Utils.toast(ctx, "请先在App内添加资产")
         }
-
         layoutCategory.setOnClickListener {
             // 根据钱迹规范：1 是收入，0 是支出
             val currentType = if (spType.selectedItemPosition == 1) Prefs.TYPE_INCOME else Prefs.TYPE_EXPENSE
@@ -191,7 +193,7 @@ class AccountingFormController(
             }
         }
 
-        rootView.findViewById<View>(R.id.layout_time).setOnClickListener { 
+        rootView.findViewById<View>(R.id.layout_time).setOnClickListener {
             OverlayDialogs.showCustomTimePicker(ctx) { tvTime.text = it }
         }
 

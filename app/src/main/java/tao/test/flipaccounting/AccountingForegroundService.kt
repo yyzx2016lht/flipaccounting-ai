@@ -34,6 +34,7 @@ class AccountingForegroundService : Service() {
     }
 
     private fun triggerVibration() {
+        if (!Prefs.isVibrateFeedbackEnabled(this)) return
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
             vibratorManager.defaultVibrator

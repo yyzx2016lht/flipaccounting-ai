@@ -115,6 +115,42 @@ class MainActivity : AppCompatActivity() {
 
         // --- 2. 开关逻辑 ---
 
+        findViewById<SwitchMaterial>(R.id.switch_permanent_wakelock).apply {
+            isChecked = Prefs.isPermanentWakeLockEnabled(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setPermanentWakeLockEnabled(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启强力唤醒锁模式" else "已关闭强力唤醒锁")
+                
+                // 重启服务以应用更改
+                if (Prefs.isFlipEnabled(this@MainActivity)) {
+                    val intent = Intent(this@MainActivity, OverlayService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                }
+            }
+        }
+
+        findViewById<SwitchMaterial>(R.id.switch_shizuku_persistence).apply {
+            isChecked = Prefs.isShizukuPersistenceEnabled(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setShizukuPersistenceEnabled(this@MainActivity, isChecked)
+                Utils.toast(this@MainActivity, if (isChecked) "已开启Shizuku终极保活" else "已关闭Shizuku保活")
+                
+                // 重启服务以应用更改
+                if (Prefs.isFlipEnabled(this@MainActivity)) {
+                    val intent = Intent(this@MainActivity, OverlayService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                }
+            }
+        }
+
         // 日志开关
         val btnShareLogs = findViewById<MaterialButton>(R.id.btn_share_logs)
         findViewById<SwitchMaterial>(R.id.switch_logging).apply {
@@ -163,6 +199,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 悬浮窗震动反馈开关
+        findViewById<SwitchMaterial>(R.id.switch_vibrate_feedback).apply {
+            isChecked = Prefs.isVibrateFeedbackEnabled(this@MainActivity)
+            setOnCheckedChangeListener { _, isChecked ->
+                Prefs.setVibrateFeedbackEnabled(this@MainActivity, isChecked)
+            }
+        }
 
         // 隐藏最近任务开关
         findViewById<SwitchMaterial>(R.id.switch_hide_recent).apply {

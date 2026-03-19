@@ -67,6 +67,9 @@ object Prefs {
     private const val KEY_SHOW_MULTI_CURRENCY = "show_multi_currency"
     private const val KEY_MULTI_BILL_ENABLED = "multi_bill_enabled" // [新增] 多账单模式
     private const val KEY_MULTI_BILL_NOT_SYNC = "multi_bill_not_sync" // [新增] 多账单模式不直接同步到钱迹
+    private const val KEY_PERMANENT_WAKELOCK = "advanced_permanent_wakelock" // [新增] 永驻唤醒锁
+    private const val KEY_SHIZUKU_PERSISTENCE = "advanced_shizuku_persistence" // [新增] Shizuku毒瘤保活
+    private const val KEY_VIBRATE_FEEDBACK = "vibrate_feedback" // [新增] 弹窗震动反馈
 
     const val TYPE_EXPENSE = 1
     const val TYPE_INCOME = 2
@@ -77,6 +80,9 @@ object Prefs {
     fun isFlipEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FLIP_ENABLED, false)
     fun setFlipEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_FLIP_ENABLED, enabled).apply()
 
+    fun isVibrateFeedbackEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_VIBRATE_FEEDBACK, true) // 默认开启震动
+    fun setVibrateFeedbackEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_VIBRATE_FEEDBACK, enabled).apply()
+
     fun isFlipAlways(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FLIP_ALWAYS, false)
     fun setFlipAlways(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_FLIP_ALWAYS, enabled).apply()
 
@@ -86,6 +92,12 @@ object Prefs {
 
     fun isHideRecents(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_HIDE_RECENTS, false)
     fun setHideRecents(ctx: Context, hide: Boolean) = prefs(ctx).edit().putBoolean(KEY_HIDE_RECENTS, hide).apply()
+
+    fun isPermanentWakeLockEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PERMANENT_WAKELOCK, false)
+    fun setPermanentWakeLockEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_PERMANENT_WAKELOCK, enabled).apply()
+
+    fun isShizukuPersistenceEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SHIZUKU_PERSISTENCE, false)
+    fun setShizukuPersistenceEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_SHIZUKU_PERSISTENCE, enabled).apply()
 
     fun isLoggingEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_LOGGING_ENABLED, false)
     fun setLoggingEnabled(ctx: Context, enabled: Boolean) = prefs(ctx).edit().putBoolean(KEY_LOGGING_ENABLED, enabled).apply()

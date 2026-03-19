@@ -5,6 +5,9 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.SystemClock
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Process
 
 /**
  * 翻转检测器：通过加速度/重力传感器检测快速翻转动作
@@ -24,6 +27,10 @@ class FlipDetector(
 
     private var faceDownTime = 0L // 记录进入“面朝下”状态的时间点
     private var lastTriggerTime = 0L // 上次成功激发的时间点
+    
+    // 跟踪最后一次收到传感器数据的真实时刻
+    @Volatile
+    var lastSensorEventTimeMillis: Long = System.currentTimeMillis()
 
     // --- 灵敏度调节参数 ---
     // G_THRESHOLD: 重力阈值。范围 5.0 (容易) - 9.0 (极难)。 用户调节 0-100。
@@ -51,14 +58,28 @@ class FlipDetector(
     // private val G_THRESHOLD = 7.5f    // OLD
     // private val MAX_FLIP_DURATION = 400L // OLD
 
+    private var sensorThread: HandlerThread? = null
+    private var sensorHandler: Handler? = null
+
     fun start(): Boolean = sensor?.let {
-        manager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        if (sensorThread == null) {
+            sensorThread = HandlerThread("FlipSensorThread", Process.THREAD_PRIORITY_BACKGROUND)
+            sensorThread?.start()
+            sensorHandler = Handler(sensorThread!!.looper)
+        }
+        manager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI, sensorHandler)
         true
     } ?: false
 
-    fun stop() = manager.unregisterListener(this)
+    fun stop() {
+        manager.unregisterListener(this)
+        sensorThread?.quitSafely()
+        sensorThread = null
+        sensorHandler = null
+    }
 
     override fun onSensorChanged(e: SensorEvent) {
+        lastSensorEventTimeMillis = System.currentTimeMillis()
         val z = e.values[2]
         val now = SystemClock.uptimeMillis()
 

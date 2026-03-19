@@ -1,6 +1,7 @@
 package tao.test.flipaccounting.ui.dialog
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.view.Gravity
@@ -75,6 +76,13 @@ object OverlayDialogs {
                     }
                     rowLayout.addView(itemView, LinearLayout.LayoutParams(0, -2, 1f))
                 }
+                // Fill empty spaces for left alignment
+                if (row.size < 5) {
+                    for (i in 0 until (5 - row.size)) {
+                        val emptyView = View(ctx)
+                        rowLayout.addView(emptyView, LinearLayout.LayoutParams(0, -2, 1f))
+                    }
+                }
                 container.addView(rowLayout)
                 if (parent != null && row.any { it.name == parent.name } && parent.subs.isNotEmpty()) {
                     container.addView(createSubPanel(ctx, parent, parts.getOrNull(1)) {
@@ -94,7 +102,14 @@ object OverlayDialogs {
         dialog.window?.let {
             it.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
-            it.setGravity(Gravity.BOTTOM)
+            it.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            it.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            // 使宽度和位置与主弹窗一致
+            it.decorView.setPadding(0, 0, 0, 0)
+            val lp = it.attributes
+            lp.width = (ctx.resources.displayMetrics.widthPixels * 0.9).toInt()
+            lp.y = 150
+            it.attributes = lp
         }
         dialog.show()
     }
@@ -122,6 +137,17 @@ object OverlayDialogs {
                     GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 ).apply { width = 0 })
             }
+            
+            // Fill empty spaces for sub panel left alignment
+            val remainder = parent.subs.size % 5
+            if (remainder != 0) {
+                for (i in 0 until (5 - remainder)) {
+                    addView(View(ctx), GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f),
+                        GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    ).apply { width = 0 })
+                }
+            }
         }
     }
 
@@ -147,6 +173,125 @@ object OverlayDialogs {
         }
         dialog.window?.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
+        dialog.show()
+    }
+
+    fun showGridAssetPicker(ctx: Context, currentSelectionText: String, title: String, onConfirm: (String) -> Unit) {
+        val themeContext = ContextThemeWrapper(ctx, R.style.Theme_FlipAccounting)
+        val view = LayoutInflater.from(themeContext).inflate(R.layout.dialog_category_picker, null)
+
+        // 修改标题
+        val tvTitle = view.findViewWithTag<TextView>("dialog_title")
+        if (tvTitle != null) {
+            tvTitle.text = title
+        } else {
+            // 如果没有tag，尝试找第一个TextView（根据布局结构）
+            if (view is LinearLayout) {
+                val firstChild = view.getChildAt(0)
+                if (firstChild is TextView) {
+                    firstChild.text = title
+                }
+            }
+        }
+
+        val dialog = AlertDialog.Builder(themeContext).setView(view).create()
+        val container = view.findViewById<LinearLayout>(R.id.container_categories)
+        val assets = Prefs.getAssets(ctx)
+        var currentSelection = currentSelectionText
+
+        fun render() {
+            container.removeAllViews()
+
+            assets.chunked(5).forEach { row ->
+                val rowLayout = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+                row.forEach { asset ->
+                    val itemView = LayoutInflater.from(ctx).inflate(R.layout.item_category_grid, rowLayout, false)
+                    itemView.findViewById<TextView>(R.id.tv_category_name).apply {
+                        text = asset.name
+                        if (asset.name == currentSelection) setTextColor(Color.parseColor("#2196F3"))
+                        else setTextColor(Color.parseColor("#333333"))
+                    }
+                    val ivIcon = itemView.findViewById<ImageView>(R.id.iv_category_icon)
+                    // 清除因为复用布局而在 XML 中携带的 tint 滤镜，让资产图标保持原色和彩色
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        ivIcon.imageTintList = null
+                    }
+                    ivIcon.clearColorFilter()
+                    
+                    if (asset.icon.isNotEmpty()) {
+                        Glide.with(ctx).load(asset.icon).transform(CircleCrop()).into(ivIcon)
+                    } else {
+                        ivIcon.setImageResource(R.mipmap.ic_launcher_round) // Fallback
+                    }
+                    
+                    itemView.setOnClickListener {
+                        currentSelection = asset.name
+                        render()
+                    }
+                    rowLayout.addView(itemView, LinearLayout.LayoutParams(0, -2, 1f))
+                }
+                // Fill empty spaces
+                if (row.size < 5) {
+                    for (i in 0 until (5 - row.size)) {
+                        val emptyView = View(ctx)
+                        rowLayout.addView(emptyView, LinearLayout.LayoutParams(0, -2, 1f))
+                    }
+                }
+                container.addView(rowLayout)
+            }
+        }
+        render()
+
+        view.findViewById<Button>(R.id.btn_confirm_category).setOnClickListener {
+            if (currentSelection.isNotEmpty() && !currentSelection.contains("选择")) {
+                onConfirm(currentSelection)
+                dialog.dismiss()
+            } else {
+                Toast.makeText(ctx, "请选择资产", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        dialog.window?.let {
+            it.setType(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE)
+            it.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            it.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            // 使宽度和位置与主弹窗一致
+            it.decorView.setPadding(0, 0, 0, 0)
+            val lp = it.attributes
+            lp.width = (ctx.resources.displayMetrics.widthPixels * 0.9).toInt()
+            lp.y = 150
+            it.attributes = lp
+        }
+        dialog.show()
+    }
+
+    fun showShizukuPrompt(ctx: Context) {
+        val themeContext = ContextThemeWrapper(ctx, R.style.Theme_FlipAccounting)
+        val dialog = AlertDialog.Builder(themeContext)
+            .setTitle("需要 Shizuku 权限")
+            .setMessage("您想使用白名单功能，但尚未启动 Shizuku 或授予本应用 Shizuku 权限。请进入 Shizuku 应用进行授权。")
+            .setPositiveButton("去授权") { d, _ ->
+                d.dismiss()
+                try {
+                    val intent = ctx.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ctx.startActivity(intent)
+                    } else {
+                        Toast.makeText(ctx, "未找到 Shizuku 应用", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(ctx, "无法打开 Shizuku", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .create()
+            
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY 
+            else WindowManager.LayoutParams.TYPE_PHONE
+        )
         dialog.show()
     }
 }
