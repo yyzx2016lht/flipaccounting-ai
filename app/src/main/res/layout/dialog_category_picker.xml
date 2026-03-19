@@ -2,22 +2,23 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/shape_dialog_bg"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@drawable/shape_dialog_bottom_sheet_bg"
+    android:orientation="vertical">
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/dialog_title"
+        android:tag="dialog_title"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="选择分类"
-        android:layout_gravity="center"
+        android:gravity="start"
         android:textSize="18sp"
         android:textStyle="bold"
         android:layout_marginBottom="16dp"/>
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="400dp"
+        android:layout_height="200dp"
         android:scrollbars="none">
         <!-- 核心容器：我们会动态往里塞一级分类行和二级面板 -->
         <LinearLayout

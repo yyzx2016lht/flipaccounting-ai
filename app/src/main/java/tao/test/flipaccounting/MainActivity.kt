@@ -251,7 +251,7 @@ class MainActivity : AppCompatActivity() {
             isChecked = Prefs.isMultiBillNotSync(this@MainActivity)
             setOnCheckedChangeListener { _, isChecked ->
                 Prefs.setMultiBillNotSync(this@MainActivity, isChecked)
-                Utils.toast(this@MainActivity, if (isChecked) "多账单将优先保存至本地" else "多账单将尝试批量同步")
+                Utils.toast(this@MainActivity, if (isChecked) "已开启：识别结果直接保存到本地，跳过确认" else "已关闭：识别结果需逐条确认")
             }
         }
 

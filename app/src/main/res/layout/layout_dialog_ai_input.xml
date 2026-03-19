@@ -70,21 +70,39 @@
                 android:textSize="14sp"
                 android:lineSpacingExtra="4dp"/>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_dialog_identify"
-                style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:layout_marginTop="16dp"
-                android:layout_marginBottom="4dp"
-                android:backgroundTint="#7B61FF"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="智能识别"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                app:cornerRadius="12dp"
-                app:elevation="0dp" />
+                android:layout_marginBottom="4dp">
+
+                <ImageView
+                    android:id="@+id/btn_dialog_voice"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_btn_speak_now"
+                    android:layout_marginEnd="12dp"
+                    android:padding="4dp"
+                    app:tint="#7B61FF" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_dialog_identify"
+                    style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="48dp"
+                    android:backgroundTint="#7B61FF"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:text="智能识别"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="12dp"
+                    app:elevation="0dp" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout

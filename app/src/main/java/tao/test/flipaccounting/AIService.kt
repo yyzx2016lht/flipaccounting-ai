@@ -153,7 +153,9 @@ JSON 结构示例：
         Logger.d(ctx, "AIService", "Analyzing: $userInput")
         val apiKey = Prefs.getAiKey(ctx)
         val model = Prefs.getAiModel(ctx)
-        if (apiKey.isEmpty()) return null
+        if (apiKey.isEmpty()) {
+            throw IllegalArgumentException("请先在设置中配置 API Key")
+        }
 
         val isMultiMode = isMultiModeOverride ?: Prefs.isMultiBillEnabled(ctx)
 
@@ -220,8 +222,15 @@ JSON 结构示例：
             Logger.d(ctx, "AIService", "AI Response: $content")
             
             val result = if (isMultiMode) {
+                // 如果是多账单，则可能返回空但无异常 (null) 或无法解析 (Exception)
                 val cleaned = cleanJsonString(content)
-                val json = JSONObject(cleaned)
+                val json = try {
+                    JSONObject(cleaned)
+                } catch (e: Exception) {
+                    // 如果不是 JSON，尝试找是否存在 JSON 代码块并手动提取
+                    throw IllegalArgumentException("AI响应非JSON: ${cleaned.take(50)}...")
+                }
+                
                 if (!json.has("bills") && json.has("amount")) {
                    val wrapper = JSONObject()
                    wrapper.put("bills", JSONArray().put(json))
@@ -229,11 +238,17 @@ JSON 结构示例：
                 } else if (json.has("bills")) {
                    json
                 } else {
-                   null
+                   // 既不是 bills 列表也不是 amount 单条，说明响应有问题
+                   throw IllegalArgumentException("多账单模式下 AI 返回的数据缺少关键字段 'bills' 或 'amount'")
                 }
             } else {
                 val cleaned = cleanJsonString(content)
-                val json = JSONObject(cleaned)
+                val json = try {
+                    JSONObject(cleaned)
+                } catch (e: Exception) {
+                   throw IllegalArgumentException("AI响应非JSON: ${cleaned.take(50)}...")
+                }
+
                 if (json.has("bills")) {
                     val bills = json.getJSONArray("bills")
                     if (bills.length() > 0) bills.getJSONObject(0) else null
@@ -276,8 +291,9 @@ JSON 结构示例：
             }
             result
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Logger.d(ctx, "AIService", "AI Request Failed: ${e.message}")
-            null
+            throw e
         }
     }
 

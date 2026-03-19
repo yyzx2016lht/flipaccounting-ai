@@ -25,6 +25,7 @@ class AiAssistant(private val ctx: Context) {
     private var currentDialog: AlertDialog? = null
     private var tvThinkingLog: TextView? = null
     private var tvRecordedTextPreview: TextView? = null
+    private var analyzeJob: kotlinx.coroutines.Job? = null
 
     // 用于外部绑定麦克风按钮的手势
     var voiceInputBtnSetup: ((View) -> Unit)? = null
@@ -235,8 +236,9 @@ class AiAssistant(private val ctx: Context) {
                 tvThinkingLog?.text = text ?: "正在处理..."
                 tvRecordedTextPreview?.visibility = View.GONE
 
-                dialog.setCancelable(false)
-                btnClose.visibility = View.GONE
+                // 允许取消
+                dialog.setCancelable(true)
+                btnClose.visibility = View.VISIBLE
             }
         }
     }
@@ -245,15 +247,28 @@ class AiAssistant(private val ctx: Context) {
      * 执行 AI 分析请求
      */
     private fun startAnalysis(text: String, isMultiMode: Boolean?, onResult: (JSONObject) -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = AIService.analyzeAccounting(ctx, text, isMultiMode)
-            withContext(Dispatchers.Main) {
-                if (result != null) {
-                    showResult(result, onResult)
-                } else {
-                    Utils.toast(ctx, "识别失败，请重试")
-                    // 失败后退回输入模式，保留刚才的文字方便修改
-                    updatePanelState(MODE_INPUT, text)
+        analyzeJob?.cancel()
+        analyzeJob = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val result = AIService.analyzeAccounting(ctx, text, isMultiMode)
+                withContext(Dispatchers.Main) {
+                    if (result != null) {
+                        showResult(result, onResult)
+                    } else {
+                        Utils.toast(ctx, "识别失败：AI 返回内容无法解析")
+                        // 失败后退回输入模式，保留刚才的文字方便修改
+                        updatePanelState(MODE_INPUT, text)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                withContext(Dispatchers.Main) {
+                    Utils.toast(ctx, "已取消")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                   Utils.toast(ctx, "AIService 错误: ${e.message ?: "未知异常"}")
+                   updatePanelState(MODE_INPUT, text)
                 }
             }
         }
@@ -347,6 +362,7 @@ class AiAssistant(private val ctx: Context) {
     }
 
     fun dismiss() {
+        analyzeJob?.cancel()
         currentDialog?.dismiss()
         currentDialog = null
     }

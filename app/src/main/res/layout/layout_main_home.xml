@@ -133,6 +133,39 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <!-- Prompt 调试 -->
+                <LinearLayout
+                    android:id="@+id/btn_prompt_debug"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="16dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="🛠️   查看当前 Prompt 相关数据源"
+                        android:textColor="#333333"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:src="@android:drawable/ic_media_play"
+                        android:rotation="0"
+                        app:tint="#CCCCCC" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="50dp"
+                    android:background="#F5F5F5" />
+
                 <!-- 资产 -->
                 <LinearLayout
                     android:id="@+id/btn_manage_assets"
@@ -393,6 +426,30 @@
                     android:background="#F5F5F5" />
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_vibrate_feedback"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:text="弹窗震动反馈"
+                    android:textColor="#333333"
+                    android:textSize="15sp"
+                    app:switchPadding="16dp" />
+                
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="翻转成功弹出记账面板时提供触觉震动反馈"
+                    android:textColor="#999999"
+                    android:textSize="11sp"
+                    android:layout_marginTop="-4dp"
+                    android:paddingBottom="8dp"/>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#F5F5F5" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/switch_hide_recent"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -466,7 +523,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:paddingVertical="4dp"
-                            android:text="不一次性同步到钱迹 (本地保存)"
+                            android:text="不验证直接批量保存"
                             android:textColor="#333333"
                             android:textSize="13sp"
                             app:switchPadding="12dp"
@@ -500,6 +557,86 @@
                     android:textColor="#333333"
                     android:textSize="15sp"
                     app:switchPadding="16dp" />
+
+                <!-- ASR Engine Selection, indented under switch_show_voice -->
+                <LinearLayout
+                    android:id="@+id/layout_asr_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="32dp"
+                    android:paddingEnd="0dp"
+                    android:paddingBottom="12dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="识别引擎"
+                        android:textColor="#666666"
+                        android:textSize="14sp" />
+
+                    <Spinner
+                        android:id="@+id/spinner_asr_mode"
+                        android:layout_width="140dp"
+                        android:layout_height="32dp"
+                        android:background="@drawable/bg_spinner_rounded"
+                        android:entries="@array/asr_modes" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layout_asr_model_info"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="32dp"
+                    android:paddingEnd="0dp"
+                    android:paddingBottom="12dp"
+                    android:baselineAligned="false"
+                    android:visibility="gone">
+
+                    <!-- 左侧：设置项标题 -->
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="模型信息"
+                        android:textColor="#666666"
+                        android:textSize="14sp" />
+
+                    <!-- 右侧：带有圆角和边框的徽章/按钮容器 -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/btn_delete_offline_model"
+                        android:layout_width="140dp"
+                        android:layout_height="32dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardBackgroundColor="#F4F6F8"
+                        app:cardCornerRadius="14dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#E0E4E8">
+
+                        <!-- 承载水波纹效果的内容区域 -->
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:foreground="?attr/selectableItemBackground">
+
+                            <TextView
+                                android:id="@+id/tv_asr_model_desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="center"
+                                android:text="硅基流动"
+                                android:textColor="#4CAF50"
+                                android:textStyle="bold"
+                                android:textSize="11sp" />
+                        </FrameLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/switch_show_multi_cur"
@@ -540,6 +677,49 @@
 
             </LinearLayout>
         </androidx.cardview.widget.CardView>
+
+        <!-- 高级留存设置 -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_permanent_wakelock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="4dp"
+            android:text="强力唤醒锁 (防杀)"
+            android:textColor="#333333"
+            android:textSize="13sp"
+            app:switchPadding="12dp"
+            android:layout_marginStart="24dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="保持CPU唤醒，极度耗电但强制保活传感器。"
+            android:textColor="#999999"
+            android:textSize="10sp"
+            android:layout_marginTop="-4dp"
+            android:layout_marginStart="24dp"
+            android:paddingBottom="8dp"/>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_shizuku_persistence"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="4dp"
+            android:text="Shizuku 终极保活"
+            android:textColor="#333333"
+            android:textSize="13sp"
+            app:switchPadding="12dp"
+            android:layout_marginStart="24dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="使用Shizuku隐藏API维持服务常驻，无视系统查杀。"
+            android:textColor="#999999"
+            android:textSize="10sp"
+            android:layout_marginTop="-4dp"
+            android:layout_marginStart="24dp"
+            android:paddingBottom="8dp"/>
 
         <TextView
             android:layout_width="match_parent"

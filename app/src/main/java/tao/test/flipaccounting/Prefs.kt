@@ -115,10 +115,10 @@ object Prefs {
     fun setAiKey(ctx: Context, key: String) = prefs(ctx).edit().putString(KEY_AI_KEY, key).apply()
 
     fun getAiModel(ctx: Context): String = prefs(ctx).getString(KEY_AI_MODEL, "Qwen/Qwen2.5-7B-Instruct") ?: "Qwen/Qwen2.5-7B-Instruct"
-    fun setAiModel(ctx: Context, model: String) = prefs(ctx).edit().putString(KEY_AI_MODEL, model).apply()
+    fun setAiModel(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_AI_MODEL, value).apply()
 
-    fun getAiProvider(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROVIDER, "硅基流动") ?: "硅基流动"
-    fun setAiProvider(ctx: Context, provider: String) = prefs(ctx).edit().putString(KEY_AI_PROVIDER, provider).apply()
+    fun getAiProvider(ctx: Context): String = prefs(ctx).getString(KEY_AI_PROVIDER, "") ?: ""
+    fun setAiProvider(ctx: Context, value: String) = prefs(ctx).edit().putString(KEY_AI_PROVIDER, value).apply()
 
     fun getAiUrl(ctx: Context): String = prefs(ctx).getString(KEY_AI_URL, "https://api.siliconflow.cn") ?: "https://api.siliconflow.cn"
     fun setAiUrl(ctx: Context, url: String) = prefs(ctx).edit().putString(KEY_AI_URL, url).apply()
